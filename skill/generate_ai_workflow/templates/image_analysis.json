@@ -1,0 +1,139 @@
+{
+  "_meta": {
+    "pattern": "image_analysis",
+    "description": "图片分析模式：上传图片 → OCR/Vision → 大语言模型 → 输出文本",
+    "use_cases": ["图片识别", "发票/报关单识别", "身份证识别", "文档提取", "图表分析", "图片内容理解"],
+    "source_example": "图片内容分析.json",
+    "variants": {
+      "ocr_then_llm": "先 OCR 提取文字，再用 LLM 分析（适合文档类）",
+      "vision_direct": "直接用多模态模型分析图片（适合需要理解图片内容的场景）"
+    }
+  },
+  "edges": [
+    {
+      "markerEnd": { "color": "#9DA0B3", "width": 25, "type": "arrowclosed", "height": 10 },
+      "animated": true,
+      "style": { "strokeWidth": 2, "strokeLinejoin": "miter", "strokeDashoffset": 2, "stroke": "#9DA0B3", "strokeDasharray": 4 },
+      "id": "EDGE_01",
+      "source": "NODE_INPUT_IMAGE_01",
+      "type": "ClosableEdge",
+      "selected": false,
+      "target": "NODE_OCR_01"
+    },
+    {
+      "markerEnd": { "color": "#9DA0B3", "width": 25, "type": "arrowclosed", "height": 10 },
+      "animated": true,
+      "style": { "strokeWidth": 2, "strokeLinejoin": "miter", "strokeDashoffset": 2, "stroke": "#9DA0B3", "strokeDasharray": 4 },
+      "id": "EDGE_02",
+      "source": "NODE_OCR_01",
+      "type": "ClosableEdge",
+      "selected": false,
+      "target": "NODE_LLM_01"
+    },
+    {
+      "markerEnd": { "color": "#9DA0B3", "width": 25, "type": "arrowclosed", "height": 10 },
+      "animated": true,
+      "style": { "strokeWidth": 2, "strokeLinejoin": "miter", "strokeDashoffset": 2, "stroke": "#9DA0B3", "strokeDasharray": 4 },
+      "id": "EDGE_03",
+      "source": "NODE_LLM_01",
+      "type": "ClosableEdge",
+      "selected": false,
+      "target": "NODE_OUTPUT_TEXT_01"
+    }
+  ],
+  "inputsSchemas": [
+    {
+      "outputs": [{ "apiName": "input_image_0", "name": "input_image_0", "type": "IMAGE" }],
+      "inputs": [
+        {
+          "component": { "editableLabel": true, "runtime": true, "renderType": "imageInput", "props": { "maxSize": 25, "accept": ".png,.jpg,.jpeg,.svg,.gif,.webp" } },
+          "defaultValue": { "filename": "", "url": "" },
+          "name": "image",
+          "label": "{{INPUT_IMAGE_LABEL}}",
+          "type": "IMAGE",
+          "value": { "filename": "", "url": "" },
+          "required": true
+        }
+      ],
+      "name": "input_image",
+      "uuid": "NODE_INPUT_IMAGE_01"
+    }
+  ],
+  "nodes": [
+    {
+      "outputs": [{ "apiName": "input_image_0", "name": "input_image_0", "type": "IMAGE" }],
+      "functionName": "input_image",
+      "inputs": [{ "name": "image", "label": "{{INPUT_IMAGE_LABEL}}", "value": { "filename": "", "url": "" } }],
+      "name": "input_image",
+      "position": { "x": 70, "y": 155 },
+      "title": "上传图片",
+      "uuid": "NODE_INPUT_IMAGE_01",
+      "version": "1.2.0",
+      "desc": "从网页端或者通过API接收用户上传的图片"
+    },
+    {
+      "outputs": [{ "apiName": "imageocr_text_0", "name": "imageocr_text_0", "type": "TEXT" }],
+      "functionName": "ocr",
+      "inputs": [
+        { "name": "param_variable", "label": "图片", "value": "{{input_image_0}}" },
+        { "name": "model", "label": "模型", "value": "影刀OCR" },
+        { "name": "scene", "label": "场景" }
+      ],
+      "name": "ai_ocr",
+      "position": { "x": 500, "y": 165 },
+      "title": "图片OCR",
+      "uuid": "NODE_OCR_01",
+      "version": "1.4.0",
+      "desc": "识别图片内的文字"
+    },
+    {
+      "outputs": [{ "apiName": "openai_llm_0", "name": "openai_llm_0", "type": "TEXT" }],
+      "functionName": "llm",
+      "inputs": [
+        { "name": "channel", "label": "厂商", "value": "{{LLM_CHANNEL}}" },
+        { "name": "model", "label": "模型", "value": "{{LLM_MODEL}}" },
+        { "name": "temperature", "label": "创意程度", "value": "{{LLM_TEMPERATURE}}" },
+        { "name": "system", "label": "Prompt（role & context）", "value": "{{SYSTEM_PROMPT}}" },
+        { "name": "user", "label": "Prompt（query）", "value": "{{USER_PROMPT}}" },
+        { "name": "openAIKey", "label": "", "value": "" }
+      ],
+      "name": "ai_llm",
+      "position": { "x": 925, "y": 60 },
+      "title": "大语言模型",
+      "uuid": "NODE_LLM_01",
+      "version": "1.13.0",
+      "desc": "大语言模型，根据Prompt输出内容"
+    },
+    {
+      "outputs": [{ "apiName": "output_text_0", "name": "output_text_0", "type": "TEXT" }],
+      "functionName": "output_text",
+      "inputs": [
+        { "name": "param_variable", "label": "文本", "value": "{{openai_llm_0}}" },
+        { "name": "text", "label": "{{OUTPUT_LABEL}}", "value": "" }
+      ],
+      "name": "output_text",
+      "position": { "x": 1350, "y": 155 },
+      "title": "输出文本",
+      "uuid": "NODE_OUTPUT_TEXT_01",
+      "version": "1.1.0",
+      "desc": "将文本内容从网页端或者通过API输出"
+    }
+  ],
+  "outputsSchemas": [
+    {
+      "outputs": [{ "apiName": "output_text_0", "name": "output_text_0", "type": "TEXT" }],
+      "inputs": [
+        {
+          "component": { "editableLabel": false, "renderType": "paramInput", "props": { "disabled": true, "readOnly": true, "placeholder": "可以使用{{变量名.子变量名}}的方式提取子变量" } },
+          "defaultValue": "", "name": "param_variable", "label": "文本", "type": "TEXT", "value": "{{openai_llm_0}}", "required": false
+        },
+        {
+          "component": { "editableLabel": true, "runtime": true, "renderType": "textInput", "props": { "autoSize": { "minRows": 1, "maxRows": 15 }, "readOnly": true } },
+          "defaultValue": "", "name": "text", "label": "{{OUTPUT_LABEL}}", "type": "TEXT", "value": "", "required": false
+        }
+      ],
+      "name": "output_text",
+      "uuid": "NODE_OUTPUT_TEXT_01"
+    }
+  ]
+}

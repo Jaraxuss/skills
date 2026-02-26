@@ -1,0 +1,204 @@
+{
+  "_meta": {
+    "pattern": "multi_output",
+    "description": "多步处理链模式：输入 → LLM/Vision → JSON解析 → 并行多个输出（文本/图片）",
+    "use_cases": ["电商套图生成", "商品listing生成", "多维度分析报告", "批量内容生成", "亚马逊post文案图片"],
+    "source_example": "电商套图生成工作流.json"
+  },
+  "edges": [
+    {
+      "sourceHandle": "NODE_INPUT_TEXT_01-1-input_text_0",
+      "data": { "weight": "1" },
+      "markerEnd": { "color": "#9DA0B3", "width": 25, "type": "arrowclosed", "height": 10 },
+      "animated": true,
+      "style": { "strokeWidth": 2, "strokeLinejoin": "miter", "strokeDashoffset": 2, "stroke": "#9DA0B3", "strokeDasharray": 4 },
+      "id": "EDGE_01",
+      "source": "NODE_INPUT_TEXT_01",
+      "type": "ClosableEdge",
+      "targetHandle": "NODE_LLM_01-in-in-mask",
+      "selected": false,
+      "target": "NODE_LLM_01"
+    },
+    {
+      "sourceHandle": "NODE_LLM_01-1-openai_llm_0",
+      "data": { "weight": "1" },
+      "markerEnd": { "color": "#9DA0B3", "width": 25, "type": "arrowclosed", "height": 10 },
+      "animated": true,
+      "style": { "strokeWidth": 2, "strokeLinejoin": "miter", "strokeDashoffset": 2, "stroke": "#9DA0B3", "strokeDasharray": 4 },
+      "id": "EDGE_02",
+      "source": "NODE_LLM_01",
+      "type": "ClosableEdge",
+      "selected": false,
+      "target": "NODE_TEXT_JSON_01"
+    },
+    {
+      "sourceHandle": "NODE_TEXT_JSON_01-1-text_json_0",
+      "data": { "weight": "1" },
+      "markerEnd": { "color": "#9DA0B3", "width": 25, "type": "arrowclosed", "height": 10 },
+      "animated": true,
+      "style": { "strokeWidth": 2, "strokeLinejoin": "miter", "strokeDashoffset": 2, "stroke": "#9DA0B3", "strokeDasharray": 4 },
+      "id": "EDGE_03",
+      "source": "NODE_TEXT_JSON_01",
+      "type": "ClosableEdge",
+      "selected": false,
+      "target": "NODE_OUTPUT_TEXT_01"
+    },
+    {
+      "sourceHandle": "NODE_TEXT_JSON_01-1-text_json_0",
+      "data": { "weight": "1" },
+      "markerEnd": { "color": "#9DA0B3", "width": 25, "type": "arrowclosed", "height": 10 },
+      "animated": true,
+      "style": { "strokeWidth": 2, "strokeLinejoin": "miter", "strokeDashoffset": 2, "stroke": "#9DA0B3", "strokeDasharray": 4 },
+      "id": "EDGE_04",
+      "source": "NODE_TEXT_JSON_01",
+      "type": "ClosableEdge",
+      "selected": false,
+      "target": "NODE_OUTPUT_TEXT_02"
+    },
+    {
+      "sourceHandle": "NODE_TEXT_JSON_01-1-text_json_0",
+      "data": { "weight": "1" },
+      "markerEnd": { "color": "#9DA0B3", "width": 25, "type": "arrowclosed", "height": 10 },
+      "animated": true,
+      "style": { "strokeWidth": 2, "strokeLinejoin": "miter", "strokeDashoffset": 2, "stroke": "#9DA0B3", "strokeDasharray": 4 },
+      "id": "EDGE_05",
+      "source": "NODE_TEXT_JSON_01",
+      "type": "ClosableEdge",
+      "selected": false,
+      "target": "NODE_OUTPUT_TEXT_03"
+    }
+  ],
+  "inputsSchemas": [
+    {
+      "outputs": [{ "apiName": "input_text_0", "name": "input_text_0", "type": "TEXT" }],
+      "inputs": [
+        {
+          "component": { "editableLabel": true, "runtime": true, "renderType": "variableInput", "props": { "autoSize": { "minRows": 1, "maxRows": 15 } } },
+          "defaultValue": "",
+          "name": "text",
+          "label": "{{INPUT_LABEL}}",
+          "type": "TEXT",
+          "value": "",
+          "required": true
+        }
+      ],
+      "name": "input_text",
+      "uuid": "NODE_INPUT_TEXT_01"
+    }
+  ],
+  "nodes": [
+    {
+      "outputs": [{ "apiName": "input_text_0", "name": "input_text_0", "type": "TEXT" }],
+      "functionName": "input_text",
+      "inputs": [{ "name": "text", "label": "{{INPUT_LABEL}}", "value": "" }],
+      "name": "input_text",
+      "position": { "x": 100, "y": 200 },
+      "title": "输入文本",
+      "uuid": "NODE_INPUT_TEXT_01",
+      "version": "1.1.0",
+      "desc": "从网页端或者通过API接收用户输入的文本"
+    },
+    {
+      "outputs": [{ "apiName": "openai_llm_0", "name": "openai_llm_0", "type": "TEXT" }],
+      "functionName": "llm",
+      "inputs": [
+        { "name": "channel", "label": "厂商", "value": "{{LLM_CHANNEL}}" },
+        { "name": "model", "label": "模型", "value": "{{LLM_MODEL}}" },
+        { "name": "temperature", "label": "创意程度", "value": "{{LLM_TEMPERATURE}}" },
+        { "name": "system", "label": "提示词Prompt（角色和要求）", "value": "{{SYSTEM_PROMPT}}" },
+        { "name": "user", "label": "提示词Prompt（内容和问题）", "value": "{{USER_PROMPT}}" },
+        { "name": "openAIKey", "label": "", "value": "" }
+      ],
+      "name": "ai_llm",
+      "position": { "x": 550, "y": 100 },
+      "title": "大语言模型",
+      "uuid": "NODE_LLM_01",
+      "version": "1.13.0",
+      "desc": "大语言模型，根据Prompt输出内容"
+    },
+    {
+      "outputs": [{ "apiName": "text_json_0", "name": "text_json_0", "type": "JSON" }],
+      "functionName": "text_to_json",
+      "inputs": [
+        { "name": "text", "label": "需要处理的文本（以JSON样式展示的文本）", "value": "{{openai_llm_0}}" }
+      ],
+      "name": "tool_text_json",
+      "position": { "x": 1000, "y": 200 },
+      "title": "文本转JSON对象",
+      "uuid": "NODE_TEXT_JSON_01",
+      "version": "1.0.0",
+      "desc": "将含有JSON样式的文本转换为JSON类型对象"
+    },
+    {
+      "outputs": [{ "apiName": "output_text_0", "name": "output_text_0", "type": "TEXT" }],
+      "functionName": "output_text",
+      "inputs": [
+        { "name": "param_variable", "label": "文本", "value": "{{text_json_0.{{JSON_KEY_1}}}}" },
+        { "name": "text", "label": "{{OUTPUT_LABEL_1}}", "value": "" }
+      ],
+      "name": "output_text",
+      "position": { "x": 1500, "y": 0 },
+      "title": "输出文本",
+      "uuid": "NODE_OUTPUT_TEXT_01",
+      "version": "1.1.0",
+      "desc": "将文本内容从网页端或者通过API输出"
+    },
+    {
+      "outputs": [{ "apiName": "output_text_1", "name": "output_text_1", "type": "TEXT" }],
+      "functionName": "output_text",
+      "inputs": [
+        { "name": "param_variable", "label": "文本", "value": "{{text_json_0.{{JSON_KEY_2}}}}" },
+        { "name": "text", "label": "{{OUTPUT_LABEL_2}}", "value": "" }
+      ],
+      "name": "output_text",
+      "position": { "x": 1500, "y": 250 },
+      "title": "输出文本",
+      "uuid": "NODE_OUTPUT_TEXT_02",
+      "version": "1.1.0",
+      "desc": "将文本内容从网页端或者通过API输出"
+    },
+    {
+      "outputs": [{ "apiName": "output_text_2", "name": "output_text_2", "type": "TEXT" }],
+      "functionName": "output_text",
+      "inputs": [
+        { "name": "param_variable", "label": "文本", "value": "{{text_json_0.{{JSON_KEY_3}}}}" },
+        { "name": "text", "label": "{{OUTPUT_LABEL_3}}", "value": "" }
+      ],
+      "name": "output_text",
+      "position": { "x": 1500, "y": 500 },
+      "title": "输出文本",
+      "uuid": "NODE_OUTPUT_TEXT_03",
+      "version": "1.1.0",
+      "desc": "将文本内容从网页端或者通过API输出"
+    }
+  ],
+  "outputsSchemas": [
+    {
+      "outputs": [{ "apiName": "output_text_0", "name": "output_text_0", "type": "TEXT" }],
+      "inputs": [
+        { "component": { "editableLabel": false, "renderType": "paramInput", "props": { "disabled": true, "readOnly": true, "placeholder": "可以使用{{变量名.子变量名}}的方式提取子变量" } }, "defaultValue": "", "name": "param_variable", "label": "文本", "type": "TEXT", "value": "{{text_json_0.{{JSON_KEY_1}}}}", "required": false },
+        { "component": { "editableLabel": true, "runtime": true, "renderType": "textInput", "props": { "autoSize": { "minRows": 1, "maxRows": 15 }, "readOnly": true } }, "defaultValue": "", "name": "text", "label": "{{OUTPUT_LABEL_1}}", "type": "TEXT", "value": "", "required": false }
+      ],
+      "name": "output_text",
+      "uuid": "NODE_OUTPUT_TEXT_01"
+    },
+    {
+      "outputs": [{ "apiName": "output_text_1", "name": "output_text_1", "type": "TEXT" }],
+      "inputs": [
+        { "component": { "editableLabel": false, "renderType": "paramInput", "props": { "disabled": true, "readOnly": true, "placeholder": "可以使用{{变量名.子变量名}}的方式提取子变量" } }, "defaultValue": "", "name": "param_variable", "label": "文本", "type": "TEXT", "value": "{{text_json_0.{{JSON_KEY_2}}}}", "required": false },
+        { "component": { "editableLabel": true, "runtime": true, "renderType": "textInput", "props": { "autoSize": { "minRows": 1, "maxRows": 15 }, "readOnly": true } }, "defaultValue": "", "name": "text", "label": "{{OUTPUT_LABEL_2}}", "type": "TEXT", "value": "", "required": false }
+      ],
+      "name": "output_text",
+      "uuid": "NODE_OUTPUT_TEXT_02"
+    },
+    {
+      "outputs": [{ "apiName": "output_text_2", "name": "output_text_2", "type": "TEXT" }],
+      "inputs": [
+        { "component": { "editableLabel": false, "renderType": "paramInput", "props": { "disabled": true, "readOnly": true, "placeholder": "可以使用{{变量名.子变量名}}的方式提取子变量" } }, "defaultValue": "", "name": "param_variable", "label": "文本", "type": "TEXT", "value": "{{text_json_0.{{JSON_KEY_3}}}}", "required": false },
+        { "component": { "editableLabel": true, "runtime": true, "renderType": "textInput", "props": { "autoSize": { "minRows": 1, "maxRows": 15 }, "readOnly": true } }, "defaultValue": "", "name": "text", "label": "{{OUTPUT_LABEL_3}}", "type": "TEXT", "value": "", "required": false }
+      ],
+      "name": "output_text",
+      "uuid": "NODE_OUTPUT_TEXT_03"
+    }
+  ]
+}

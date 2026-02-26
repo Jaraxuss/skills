@@ -1,0 +1,334 @@
+{
+  "_meta": {
+    "description": "AI Power 工作流节点类型注册表。每种节点包含完整的字段模板，用于生成工作流 JSON。",
+    "version": "1.0.0"
+  },
+  "edge_template": {
+    "markerEnd": { "color": "#9DA0B3", "width": 25, "type": "arrowclosed", "height": 10 },
+    "animated": true,
+    "style": { "strokeWidth": 2, "strokeLinejoin": "miter", "strokeDashoffset": 2, "stroke": "#9DA0B3", "strokeDasharray": 4 },
+    "type": "ClosableEdge",
+    "selected": false
+  },
+  "nodes": {
+    "input_text": {
+      "functionName": "input_text",
+      "name": "input_text",
+      "version": "1.1.0",
+      "title": "输入文本",
+      "desc": "从网页端或者通过API接收用户输入的文本",
+      "outputs": [{ "apiName": "input_text_0", "name": "input_text_0", "type": "TEXT" }],
+      "inputs": [
+        { "name": "text", "label": "请输入文本", "value": "" }
+      ],
+      "inputsSchema": {
+        "component": { "editableLabel": true, "runtime": true, "renderType": "variableInput", "props": { "autoSize": { "minRows": 1, "maxRows": 15 } } },
+        "defaultValue": "",
+        "name": "text",
+        "type": "TEXT",
+        "required": true
+      },
+      "notes": "label 和 outputs.name 可自定义。多个 input_text 时 outputs.apiName 递增为 input_text_0, input_text_1 等，但 name 可以自定义为有意义的名称。"
+    },
+    "input_image": {
+      "functionName": "input_image",
+      "name": "input_image",
+      "version": "1.2.0",
+      "title": "上传图片",
+      "desc": "从网页端或者通过API接收用户上传的图片",
+      "outputs": [{ "apiName": "input_image_0", "name": "input_image_0", "type": "IMAGE" }],
+      "inputs": [
+        { "name": "image", "label": "请上传图片", "value": { "filename": "", "url": "" } }
+      ],
+      "inputsSchema": {
+        "component": { "editableLabel": true, "runtime": true, "renderType": "imageInput", "props": { "maxSize": 25, "accept": ".png,.jpg,.jpeg,.svg,.gif,.webp" } },
+        "defaultValue": { "filename": "", "url": "" },
+        "name": "image",
+        "type": "IMAGE",
+        "required": true
+      },
+      "notes": "IMAGE 类型的 value 是 {filename, url} 对象。"
+    },
+    "llm": {
+      "functionName": "llm",
+      "name": "ai_llm",
+      "version": "1.13.0",
+      "title": "大语言模型",
+      "desc": "大语言模型，根据Prompt输出内容",
+      "outputs": [{ "apiName": "openai_llm_0", "name": "openai_llm_0", "type": "TEXT" }],
+      "inputs": [
+        { "name": "channel", "label": "厂商", "value": "azure" },
+        { "name": "model", "label": "模型", "value": "gpt-5.2" },
+        { "name": "temperature", "label": "创意程度", "value": 0.5 },
+        { "name": "system", "label": "提示词Prompt（角色和要求）", "value": "" },
+        { "name": "user", "label": "提示词Prompt（内容和问题）", "value": "" },
+        { "name": "openAIKey", "label": "", "value": "" }
+      ],
+      "notes": "outputs.apiName 格式为 openai_llm_0, llm_0, llm_1 等，多个 LLM 节点时递增。channel 可选: azure, deepseek, gemini 等。system 是角色设定 Prompt，user 是用户输入的内容 Prompt，通过 {{变量名}} 引用上游。"
+    },
+    "vision": {
+      "functionName": "vision",
+      "name": "ai_vision",
+      "version": "1.9.0",
+      "title": "多模态大模型",
+      "desc": "多模态大模型，根据Prompt和图片输出内容",
+      "outputs": [{ "apiName": "mllm_0", "name": "mllm_0", "type": "TEXT" }],
+      "inputs": [
+        { "name": "channel", "label": "厂商", "value": "gemini" },
+        { "name": "model", "label": "模型", "value": "gemini-3-flash" },
+        { "name": "temperature", "label": "创意程度", "value": 0.25 },
+        { "name": "system", "label": "提示词Prompt（角色和要求）", "value": "" },
+        { "name": "user", "label": "提示词Prompt（内容和问题）", "value": "" },
+        { "name": "multi_param_variable", "label": "需要分析的图片或视频", "value": "" }
+      ],
+      "notes": "multi_param_variable 引用图片输入如 {{input_image_0}}。"
+    },
+    "ocr": {
+      "functionName": "ocr",
+      "name": "ai_ocr",
+      "version": "1.4.0",
+      "title": "图片文字提取",
+      "desc": "识别图片内的文字",
+      "outputs": [{ "apiName": "imageocr_text_0", "name": "imageocr_text_0", "type": "TEXT" }],
+      "inputs": [
+        { "name": "param_variable", "label": "图片", "value": "" },
+        { "name": "model", "label": "模型", "value": "影刀OCR" },
+        { "name": "scene", "label": "场景", "value": "normal" }
+      ],
+      "notes": "param_variable 引用图片如 {{input_image_0}}。model 可选: 影刀OCR, xybot。"
+    },
+    "aigc_image": {
+      "functionName": "aigc_image",
+      "name": "ai_aigc_image",
+      "version": "1.9.0",
+      "title": "文生图大模型",
+      "desc": "通过自然语言描述来生成图片",
+      "outputs": [{ "apiName": "generate_image_0", "name": "generate_image_0", "type": "IMAGE" }],
+      "inputs": [
+        { "name": "channel", "label": "厂商", "value": "azure" },
+        { "name": "model", "label": "模型", "value": "gpt-image-1.5" },
+        { "name": "size", "label": "图片尺寸", "value": "1024x1024" },
+        { "name": "width", "label": "宽度（像素）", "value": "" },
+        { "name": "height", "label": "高度（像素）", "value": "" },
+        { "name": "description", "label": "对图片的文字描述", "value": "" },
+        { "name": "quality", "label": "图片质量", "value": "" }
+      ],
+      "notes": "description 是文生图的 Prompt，通常引用 LLM 或 text_extend 输出。"
+    },
+    "generation_image": {
+      "functionName": "generation_image",
+      "name": "ai_img_to_img",
+      "version": "1.2.0",
+      "title": "图生图大模型",
+      "desc": "通过自然语言描述和参考图片来生成新的图片",
+      "outputs": [{ "apiName": "image_to_image_0", "name": "image_to_image_0", "type": "IMAGE" }],
+      "inputs": [
+        { "name": "channel", "label": "厂商", "value": "google" },
+        { "name": "model", "label": "模型", "value": "gemini-3-pro-image-preview" },
+        { "name": "size", "label": "图片尺寸", "value": "1:1" },
+        { "name": "quality", "label": "图片质量", "value": "auto" },
+        { "name": "description", "label": "对图片的文字描述", "value": "" },
+        { "name": "multi_param_variable", "label": "参考图", "value": "" }
+      ],
+      "notes": "description 引用提示词，multi_param_variable 引用图片如 {{input_image_0}}。多个实例时 apiName 递增。"
+    },
+    "output_text": {
+      "functionName": "output_text",
+      "name": "output_text",
+      "version": "1.1.0",
+      "title": "输出文本",
+      "desc": "将文本内容从网页端或者通过API输出",
+      "outputs": [{ "apiName": "output_text_0", "name": "output_text_0", "type": "TEXT" }],
+      "inputs": [
+        { "name": "param_variable", "label": "文本", "value": "" },
+        { "name": "text", "label": "输出的文本", "value": "" }
+      ],
+      "outputsSchema": {
+        "inputs": [
+          {
+            "component": { "editableLabel": false, "renderType": "paramInput", "props": { "disabled": true, "readOnly": true, "placeholder": "可以使用{{变量名.子变量名}}的方式提取子变量" } },
+            "defaultValue": "", "name": "param_variable", "label": "文本", "type": "TEXT", "required": false
+          },
+          {
+            "component": { "editableLabel": true, "runtime": true, "renderType": "textInput", "props": { "autoSize": { "minRows": 1, "maxRows": 15 }, "readOnly": true } },
+            "defaultValue": "", "name": "text", "label": "输出的文本", "type": "TEXT", "required": false
+          }
+        ]
+      },
+      "notes": "param_variable 引用上游变量如 {{openai_llm_0}}。text 的 label 可自定义为有意义的名称。多个时 apiName 递增。"
+    },
+    "output_image": {
+      "functionName": "output_image",
+      "name": "output_image",
+      "version": "1.1.0",
+      "title": "输出图片",
+      "desc": "将图片从网页端下载或者通过API输出",
+      "outputs": [{ "apiName": "output_image_0", "name": "output_image_0", "type": "IMAGE" }],
+      "inputs": [
+        { "name": "param_variable", "label": "图片", "value": "" },
+        { "name": "save_name", "label": "保存文件名", "value": "" },
+        { "name": "file", "label": "输出的图片", "value": "" }
+      ],
+      "outputsSchema": {
+        "inputs": [
+          {
+            "component": { "editableLabel": false, "renderType": "paramInput", "props": { "disabled": true, "readOnly": true } },
+            "defaultValue": "", "name": "param_variable", "label": "图片", "type": "IMAGE", "required": false
+          },
+          {
+            "component": { "editableLabel": false, "renderType": "textInput", "props": { "autoSize": { "minRows": 1, "maxRows": 3 }, "placeholder": "选填" } },
+            "defaultValue": "", "name": "save_name", "label": "保存文件名", "type": "", "required": false
+          },
+          {
+            "component": { "editableLabel": true, "runtime": true, "renderType": "readImage", "props": {} },
+            "defaultValue": "", "name": "file", "label": "输出的图片", "type": "", "required": false
+          }
+        ]
+      },
+      "notes": "param_variable 引用图片变量如 {{generate_image_0}}。"
+    },
+    "output_table": {
+      "functionName": "output_table",
+      "name": "output_table",
+      "version": "1.0.0",
+      "title": "输出表格",
+      "desc": "将表格数据从网页端或者通过API输出",
+      "outputs": [{ "apiName": "output_table_0", "name": "output_table_0", "type": "TABLE" }],
+      "inputs": [
+        { "name": "param_variable", "label": "表格", "value": "" },
+        { "name": "table", "label": "输出的表格", "value": "" }
+      ],
+      "notes": "param_variable 引用表格变量如 {{db_table_0}}。"
+    },
+    "text_to_json": {
+      "functionName": "text_to_json",
+      "name": "tool_text_json",
+      "version": "1.0.0",
+      "title": "文本转JSON对象",
+      "desc": "将含有JSON样式的文本转换为JSON类型对象",
+      "outputs": [{ "apiName": "text_json_0", "name": "text_json_0", "type": "JSON" }],
+      "inputs": [
+        { "name": "text", "label": "需要处理的文本（以JSON样式展示的文本）", "value": "" }
+      ],
+      "notes": "text 引用上游文本如 {{openai_llm_0}}。输出可通过 {{text_json_0.字段名}} 访问 JSON 子字段。"
+    },
+    "text_extend": {
+      "functionName": "text_extend",
+      "name": "tool_text_extend",
+      "version": "1.0.0",
+      "title": "文本配置",
+      "desc": "可以合并多个文本内容",
+      "outputs": [{ "apiName": "set_text_0", "name": "set_text_0", "type": "TEXT" }],
+      "inputs": [
+        { "name": "text", "label": "配置的文本", "value": "" }
+      ],
+      "notes": "用于拼接多个变量和固定文本，如 '产品名: {{input_text_0}}，描述: {{llm_0}}'。"
+    },
+    "table_conversion": {
+      "functionName": "table_conversion",
+      "name": "tool_table_conversion",
+      "version": "1.0.0",
+      "title": "表格转文本",
+      "desc": "将数据库输出的表格转换成文本",
+      "outputs": [{ "apiName": "tableconvert_text_0", "name": "tableconvert_text_0", "type": "TEXT" }],
+      "inputs": [
+        { "name": "param_variable", "label": "表格", "value": "" }
+      ],
+      "notes": "param_variable 引用表格如 {{db_table_0}}。"
+    },
+    "db_loader": {
+      "functionName": "db_loader",
+      "name": "loader_db",
+      "version": "1.3.0",
+      "title": "数据库数据获取",
+      "desc": "获取数据库的数据，支持SQL语句",
+      "outputs": [{ "apiName": "db_table_0", "name": "db_table_0", "type": "TABLE" }],
+      "inputs": [
+        { "name": "database_id", "label": "选择数据库", "value": "" },
+        { "name": "sql_statement", "label": "SQL语句", "value": "" }
+      ],
+      "notes": "sql_statement 通常引用 LLM 生成的 SQL 如 {{llm_0}}。database_id 需要用户自行配置。"
+    },
+    "embedding": {
+      "functionName": "embedding",
+      "name": "ai_embedding",
+      "version": "1.10.0",
+      "title": "知识库搜索",
+      "desc": "搜索和问题相关的知识内容，支持语义和关键词两种搜索方式",
+      "outputs": [{ "apiName": "search_text_0", "name": "search_text_0", "type": "TEXT" }],
+      "inputs": [
+        { "name": "searchType", "label": "搜索方式", "value": "vector_search" },
+        { "name": "query", "label": "搜索词", "value": "" },
+        { "name": "rerank", "label": "重排搜索结果", "value": false },
+        { "name": "rerankChannel", "value": "cohere" },
+        { "name": "rerankModel", "label": "重排模型名称", "value": "rerank-v3.5" },
+        { "name": "queryScore", "value": 1 },
+        { "name": "topN", "label": "片段数量上限", "value": 3 },
+        { "name": "knowledgeId", "label": "索引文档", "value": "" },
+        { "name": "embeddingId", "label": "知识库id", "value": "" },
+        { "name": "knowledgeIds", "label": "数据库文档", "value": "" }
+      ],
+      "notes": "query 引用用户输入或 LLM 处理后的搜索词。knowledgeId/embeddingId 需要用户自行配置。"
+    },
+    "logic_condition": {
+      "functionName": "logic_condition",
+      "name": "logic_condition",
+      "version": "1.0.0",
+      "title": "条件分支",
+      "desc": "当满足条件时则输出",
+      "outputs": [
+        { "apiName": "logic_next_id_0", "name": "logic_next_id_0", "type": "TEXT" },
+        { "apiName": "logic_output_0", "name": "logic_output_0", "type": "JSON" }
+      ],
+      "inputs": [
+        {
+          "name": "conditions",
+          "label": "逻辑条件",
+          "value": [{ "condition": "include", "value": "", "key": "" }]
+        }
+      ],
+      "notes": "condition 可选: include, not_include, equal, not_equal 等。key 引用上游变量。满足条件走带 weight=1000 的 edge，不满足走 weight=1 的 edge。"
+    },
+    "logic_merge_branches": {
+      "functionName": "logic_merge_branches",
+      "name": "logic_merge_branches",
+      "version": "1.1.0",
+      "title": "合并分支",
+      "desc": "将多条分支的变量合并为一个变量，方便下游使用",
+      "outputs": [{ "apiName": "merge_branches_0", "name": "merge_branches_0", "type": "TEXT" }],
+      "inputs": [
+        {
+          "name": "variables",
+          "label": "变量",
+          "value": []
+        }
+      ],
+      "notes": "variables 数组中每个元素为 {apiName, name, id, type, value} 引用各分支的输出。"
+    },
+    "ai_generic_handle": {
+      "functionName": "ai_generic_handle",
+      "name": "ai_generic_handle",
+      "version": "1.1.0",
+      "title": "AI通用处理",
+      "desc": "生成代码处理文本、图片、文件、时间日期、逻辑判断等问题",
+      "outputs": [{ "apiName": "process_result_0", "name": "process_result_0", "type": "JSON" }],
+      "inputs": [
+        { "name": "description", "label": "处理描述", "value": "" },
+        { "name": "result", "label": "处理结果", "value": "" },
+        {
+          "name": "params",
+          "label": "参数",
+          "value": {
+            "outputs": [],
+            "inputs": [],
+            "name": "",
+            "description": "",
+            "title": "",
+            "packages": []
+          }
+        }
+      ],
+      "notes": "description 描述任务，result 是 Python 代码。params.inputs 中的 value 引用上游变量，params.outputs 定义输出变量。输出通过 {{process_result_0.变量名}} 访问。"
+    }
+  }
+}
