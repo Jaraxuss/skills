@@ -19,11 +19,15 @@ description: 根据关键词搜索当前用户在飞书（Lark）中可见的云
 
 ## 使用前提
 
-1. 需要一个有效的飞书 **`user_access_token`**（Bearer Token），代表当前用户执行搜索。
+1. 在[飞书开放平台](https://open.feishu.cn/app)创建自建应用，获取 **`app_id`** 和 **`app_secret`**，填入本 Skill 目录下的 `config.json`。
 2. 对应的飞书应用需已开通以下**任意一项**权限：
    - `drive:drive`（查看、评论、编辑和管理云文档所有文件）
    - `drive:drive:readonly`（查看、评论和下载云文档所有文件）
    - `search:docs:read`（搜索用户有权限的云文档）
+3. ⚠️ **关于 Token 类型的重要说明**：
+   - `get_token.py` 获取的是 **`tenant_access_token`**（应用身份），可直接用于调用大多数飞书 API。
+   - 搜索云文档接口原则上需要 **`user_access_token`**（用户身份）才能返回该用户可见的文档；若使用 `tenant_access_token` 搜索结果为空，属正常限制。
+   - 如需以用户身份搜索，须通过 OAuth 2.0 流程额外获取 `user_access_token`（超出本 Skill 范围）。
 
 ---
 
@@ -44,11 +48,38 @@ description: 根据关键词搜索当前用户在飞书（Lark）中可见的云
 
 ## 执行步骤
 
-### 步骤 1：准备参数
+### 步骤 0：配置应用凭证（仅首次使用）
 
-从用户对话中提取并整理上述参数。若用户未提供 `count`，默认设为 `10`；`offset` 默认为 `0`。
+编辑本 Skill 目录下的 `config.json`，填入真实的 `app_id` 和 `app_secret`：
 
-### 步骤 2：执行 Python 脚本
+```json
+{
+  "app_id": "cli_你的应用ID",
+  "app_secret": "你的应用密钥"
+}
+```
+
+> 凭证来源：飞书开放平台 → 我的应用 → 选择应用 → 凭证与基础信息。
+
+### 步骤 1：获取 tenant_access_token
+
+运行 `get_token.py` 获取访问凭证（**`Cwd` 设置为本 Skill 所在目录**）：
+
+```bash
+# 正常模式（展示 token 和有效期）
+python3 ./get_token.py
+
+# plain 模式（仅输出 token 字符串，便于直接复制传入 search.py）
+python3 ./get_token.py --plain
+```
+
+token 有效期最长 **2 小时**，重复调用若剩余有效期 ≥ 30 分钟则返回原 token，无需担心频繁调用消耗配额。
+
+### 步骤 2：准备搜索参数
+
+从用户对话中提取并整理搜索参数。若用户未提供 `count`，默认设为 `10`；`offset` 默认为 `0`。
+
+### 步骤 3：执行搜索脚本
 
 使用 `run_command` 工具运行 `search.py` 脚本，**`Cwd` 设置为本 Skill 所在目录**，通过命令行参数传入所有配置：
 
@@ -63,9 +94,9 @@ python3 ./search.py \
 
 > **注意**：`--types` 为逗号分隔的字符串，例如 `"doc,sheet"`；不传则搜全部类型。
 
-脚本会调用飞书 API，将结果以 **JSON** 格式打印到 stdout。
+脚本会调用飞书 API，将结果以 **Markdown 表格**格式打印到 stdout。
 
-### 步骤 3：解析并展示结果
+### 步骤 4：解析并展示结果
 
 读取脚本输出的 JSON，进行格式化展示。
 
@@ -96,7 +127,7 @@ python3 ./search.py \
 
 直接向用户展示错误码和错误信息，常见错误参考[服务端错误码说明](https://open.feishu.cn/document/ukTMukTMukTM/ugjM14COyUjL4ITN)。
 
-### 步骤 4：向用户汇报
+### 步骤 5：向用户汇报
 
 输出搜索结果表格，并根据 `has_more` 提示用户是否可通过增大 `offset` 获取更多结果。
 

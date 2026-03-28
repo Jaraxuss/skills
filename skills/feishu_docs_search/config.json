@@ -1,0 +1,5 @@
+{
+  "_comment": "飞书自建应用凭证配置。在飞书开放平台 https://open.feishu.cn/app 创建自建应用后获取。",
+  "app_id": "cli_your_app_id_here",
+  "app_secret": "your_app_secret_here"
+}
