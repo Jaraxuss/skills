@@ -28,21 +28,28 @@ TYPE_LABELS = {
     "file": "📎 文件",
 }
 
-# 飞书文档直达链接模板
-LINK_TEMPLATES = {
-    "doc": "https://ying-dao.feishu.cn/docs/{token}",
-    "sheet": "https://ying-dao.feishu.cn/sheets/{token}",
-    "slides": "https://ying-dao.feishu.cn/slides/{token}",
-    "bitable": "https://ying-dao.feishu.cn/base/{token}",
-    "mindnote": "https://ying-dao.feishu.cn/mindnotes/{token}",
-    "file": "https://ying-dao.feishu.cn/file/{token}",
+# docs_type → URL path 的映射（只列不一致的）
+# 未在映射表里的类型，直接用 docs_type 作为 URL path（如 slides、file、mindmap 等）
+DOCS_TYPE_TO_URL_PATH = {
+    "doc":      "docs",      # 旧版文档
+    "sheet":    "sheets",    # 电子表格
+    "bitable":  "base",      # 多维表格
+    "mindnote": "mindnotes", # 思维笔记
 }
+
+# 飞书工作区域（飞书私有化/SaaS 租户前缀），从 LINK_TEMPLATES 域名统一指定
+FEISHU_HOST = "https://ying-dao.feishu.cn"
 
 
 def build_feishu_link(docs_type: str, docs_token: str) -> str:
-    """根据文档类型和 Token 构建飞书直达链接。"""
-    template = LINK_TEMPLATES.get(docs_type, "https://ying-dao.feishu.cn/docs/{token}")
-    return template.format(token=docs_token)
+    """根据文档类型和 Token 构建飞书直达链接。
+
+    URL path 规则：
+    - docs_type 在 DOCS_TYPE_TO_URL_PATH 中有映射 → 用映射值
+    - 其余类型（slides、file、mindmap 等）→ 直接用 docs_type 作为 path
+    """
+    url_path = DOCS_TYPE_TO_URL_PATH.get(docs_type, docs_type)
+    return f"{FEISHU_HOST}/{url_path}/{docs_token}"
 
 
 def search_docs(token: str, search_key: str, count: int = 10, offset: int = 0,
