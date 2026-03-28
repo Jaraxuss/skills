@@ -30,18 +30,18 @@ TYPE_LABELS = {
 
 # 飞书文档直达链接模板
 LINK_TEMPLATES = {
-    "doc": "https://docs.feishu.cn/docs/{token}",
-    "sheet": "https://docs.feishu.cn/sheets/{token}",
-    "slides": "https://docs.feishu.cn/slides/{token}",
-    "bitable": "https://docs.feishu.cn/base/{token}",
-    "mindnote": "https://docs.feishu.cn/mindnotes/{token}",
-    "file": "https://docs.feishu.cn/file/{token}",
+    "doc": "https://ying-dao.feishu.cn/docs/{token}",
+    "sheet": "https://ying-dao.feishu.cn/sheets/{token}",
+    "slides": "https://ying-dao.feishu.cn/slides/{token}",
+    "bitable": "https://ying-dao.feishu.cn/base/{token}",
+    "mindnote": "https://ying-dao.feishu.cn/mindnotes/{token}",
+    "file": "https://ying-dao.feishu.cn/file/{token}",
 }
 
 
 def build_feishu_link(docs_type: str, docs_token: str) -> str:
     """根据文档类型和 Token 构建飞书直达链接。"""
-    template = LINK_TEMPLATES.get(docs_type, "https://docs.feishu.cn/docs/{token}")
+    template = LINK_TEMPLATES.get(docs_type, "https://ying-dao.feishu.cn/docs/{token}")
     return template.format(token=docs_token)
 
 
