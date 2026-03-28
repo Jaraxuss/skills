@@ -114,8 +114,8 @@ def main():
     parser.add_argument("--code", required=True, help="第三步获取的 OAuth 授权码")
     parser.add_argument(
         "--redirect-uri",
-        default="http://localhost:9527/callback",
-        help="授权时使用的回调地址，必须与 get_oauth_code.py 中一致，默认 http://localhost:9527/callback",
+        default="",
+        help="授权时使用的回调地址，优先于 config.json。不填则自动从 config.json 读取",
     )
     parser.add_argument(
         "--plain",
@@ -140,7 +140,14 @@ def main():
     if not args.plain:
         print("🔄 正在用授权码换取 user_access_token...")
 
-    result = exchange_code_for_token(app_id, app_secret, args.code, args.redirect_uri)
+    # redirect_uri 优先级：CLI 参数 > config.json > 底底默认值
+    redirect_uri = (
+        args.redirect_uri
+        or config.get("redirect_uri", "")
+        or "http://localhost:9527/callback"
+    )
+
+    result = exchange_code_for_token(app_id, app_secret, args.code, redirect_uri)
 
     # 飞书 v2 OAuth token 端点，成功时无 code 字段，直接有 access_token
     # 失败时有 error 或 error_description 字段

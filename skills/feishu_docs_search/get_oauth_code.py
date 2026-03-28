@@ -4,21 +4,21 @@
 API 文档：https://open.feishu.cn/document/authentication-management/access-token/obtain-oauth-code
 
 工作原理：
-    1. 在本地启动一个临时 HTTP 服务器（默认监听 http://localhost:9527/callback）
-    2. 用浏览器自动打开飞书 OAuth 授权页面
-    3. 用户在浏览器中点击「同意授权」
-    4. 飞书将浏览器重定向到本地回调地址，携带 code 参数
-    5. 本地服务器捕获 code，打印到终端，服务器自动关闭
+    1. 从 config.json 读取 redirect_uri（默认 http://192.168.31.169:9527/callback）
+    2. 在本机启动临时 HTTP 服务器，绑定 0.0.0.0（接受局域网访问），端口从 redirect_uri 自动解析
+    3. 打印飞书 OAuth 授权页面 URL（服务器环境无法自动打开浏览器，需手动访问）
+    4. 用户在浏览器中点击「同意授权」
+    5. 飞书将浏览器重定向到 redirect_uri，携带 code 参数
+    6. 本地服务器捕获 code，打印到终端，服务器自动关闭
 
 前提条件：
-    - config.json 中已填入 app_id 和 app_secret
-    - 在飞书开放平台「安全设置」→「重定向 URL」中添加：http://localhost:9527/callback
-      （只需配置一次，开发环境用）
+    - config.json 中已填入 app_id、app_secret 和 redirect_uri
+    - 在飞书开放平台「安全设置」→「重定向 URL」中添加与 config.json 中相同的 redirect_uri
 
 用法示例：
     python3 get_oauth_code.py
-    python3 get_oauth_code.py --port 8080
-    python3 get_oauth_code.py --scope "search:docs:read offline_access"
+    python3 get_oauth_code.py --redirect-uri "http://192.168.31.169:9527/callback"
+    python3 get_oauth_code.py --scope "search:docs:read"
     python3 get_oauth_code.py --plain   # 只输出 code 字符串
 """
 
@@ -130,41 +130,46 @@ def make_callback_handler(expected_state: str, plain: bool):
     return CallbackHandler
 
 
-def get_oauth_code(app_id: str, port: int, scope: str, plain: bool) -> str | None:
+def get_oauth_code(app_id: str, redirect_uri: str, scope: str, plain: bool) -> str | None:
     """
-    启动本地回调服务器，打开浏览器获取 OAuth code。
+    启动本地回调服务器，等待 OAuth 回调获取 code。
+
+    Args:
+        redirect_uri: 完整回调地址，端口从中自动解析，服务器绑定 0.0.0.0 接受局域网连接。
 
     Returns:
         成功返回 code 字符串，失败返回 None。
     """
     global _server_instance
 
-    redirect_uri = f"http://localhost:{port}/callback"
+    # 从 redirect_uri 解析端口，缺省 9527
+    parsed_uri = urllib.parse.urlparse(redirect_uri)
+    port = parsed_uri.port or 9527
 
     # 生成随机 state（防 CSRF）
     state = secrets.token_urlsafe(16)
 
     auth_url = build_auth_url(app_id, redirect_uri, scope, state)
 
-    # 启动本地 HTTP 服务器
+    # 绑定 0.0.0.0 使服务器可被局域网访问（服务器部署场景）
     handler = make_callback_handler(state, plain)
     try:
-        server = HTTPServer(("localhost", port), handler)
+        server = HTTPServer(("0.0.0.0", port), handler)
     except OSError as e:
-        print(f"❌ 无法在端口 {port} 启动本地服务器：{e}", file=sys.stderr)
-        print(f"   请用 --port 指定其他端口，或检查该端口是否已被占用。", file=sys.stderr)
+        print(f"❌ 无法在端口 {port} 启动服务器：{e}", file=sys.stderr)
+        print(f"   请检查端口是否被占用，或修改 config.json 中的 redirect_uri 端口。", file=sys.stderr)
         return None
 
     _server_instance = server
 
     if not plain:
-        print(f"🌐 正在浏览器中打开飞书授权页面...")
-        print(f"   如果浏览器未自动打开，请手动访问以下地址：")
+        print(f"⏳ 已在 0.0.0.0:{port} 启动回调服务器，等待授权...")
+        print()
+        print(f"👉 请在浏览器中打开以下授权链接：")
         print(f"   {auth_url}")
         print()
-        print(f"⏳ 等待用户在浏览器中完成授权（本地监听 {redirect_uri}）...")
 
-    # 用独立线程打开浏览器，避免阻塞服务器
+    # 尝试用浏览器打开（本地运行有效，服务器环境会静默失败）
     threading.Timer(0.5, lambda: webbrowser.open(auth_url)).start()
 
     # 阻塞等待回调（serve_forever 直到 shutdown() 被调用）
@@ -178,17 +183,19 @@ def main():
         description="获取飞书 OAuth 授权码 (step 3 of user_access_token flow)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-前提：在飞书开放平台「安全设置」→「重定向 URL」中添加 http://localhost:9527/callback
+前提：在飞书开放平台「安全设置」→「重定向 URL」中配置与 config.json 中 redirect_uri 完全一致的地址
 
 示例：
   python3 get_oauth_code.py
-  python3 get_oauth_code.py --port 8080
-  python3 get_oauth_code.py --scope "search:docs:read offline_access"
+  python3 get_oauth_code.py --redirect-uri "http://192.168.31.169:9527/callback"
+  python3 get_oauth_code.py --scope "search:docs:read"
   python3 get_oauth_code.py --plain   # 只输出 code，便于传给下一步脚本
         """,
     )
     parser.add_argument(
-        "--port", type=int, default=9527, help="本地回调监听端口，默认 9527"
+        "--redirect-uri",
+        default="",
+        help="OAuth 回调地址（优先于 config.json），如 http://192.168.31.169:9527/callback",
     )
     parser.add_argument(
         "--scope",
@@ -211,7 +218,12 @@ def main():
         print(f"   请编辑 {CONFIG_PATH} 填入真实凭证。", file=sys.stderr)
         sys.exit(1)
 
-    redirect_uri = f"http://localhost:{args.port}/callback"
+    # redirect_uri 优先级：CLI 参数 > config.json > 兜底默认值
+    redirect_uri = (
+        args.redirect_uri
+        or config.get("redirect_uri", "")
+        or "http://localhost:9527/callback"
+    )
 
     if not args.plain:
         print("=" * 60)
@@ -227,7 +239,7 @@ def main():
 
     code = get_oauth_code(
         app_id=app_id,
-        port=args.port,
+        redirect_uri=redirect_uri,
         scope=args.scope,
         plain=args.plain,
     )

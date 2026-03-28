@@ -1,5 +1,7 @@
 {
   "_comment": "飞书自建应用凭证配置。在飞书开放平台 https://open.feishu.cn/app 创建自建应用后获取。",
   "app_id": "cli_your_app_id_here",
-  "app_secret": "your_app_secret_here"
+  "app_secret": "your_app_secret_here",
+  "redirect_uri": "http://[IP]:[PORT]/callback",
+  "_redirect_uri_comment": "OAuth 回调地址。需与飞书开放平台「安全设置」→「重定向 URL」中配置的地址完全一致。服务器部署时改为服务器 IP/域名，本地调试可改为 http://localhost:9527/callback"
 }
