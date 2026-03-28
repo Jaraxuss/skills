@@ -1,56 +1,56 @@
 ---
 name: 飞书云文档搜索
-description: 根据关键词搜索当前用户在飞书（Lark）中可见的云文档，返回包含文档标题、类型、Token 和所有者信息的结构化列表。执行由 Python 脚本完成，需要提供 user_access_token 和搜索关键词。
+description: 根据关键词搜索当前用户在飞书中可见的云文档，返回包含文档标题、类型、Token 和直达链接的结构化列表。包含完整的 OAuth 2.0 用户授权流程（获取授权码 → 换取 user_access_token → 刷新 token），以及最终的关键词搜索能力。所有步骤均由 Python 脚本执行，无需额外依赖。
 ---
 
 # 飞书云文档搜索 Skill (feishu_docs_search)
 
-本 Skill 通过调用飞书开放平台的[搜索云文档](https://open.feishu.cn/document/server-docs/docs/drive-v1/search/document-search) API，根据搜索关键词对当前用户（`user_access_token`）可见的所有云文档进行全文检索，并返回结构化的文档列表结果。
+本 Skill 通过完整的 OAuth 2.0 用户授权流程获取 `user_access_token`，再调用飞书[搜索云文档](https://open.feishu.cn/document/server-docs/docs/drive-v1/search/document-search) API，对当前用户可见的所有云文档进行全文检索，并以 Markdown 表格返回结果。
 
-## 核心能力
+## 文件说明
 
-- **关键词搜索**：精准定位用户有权限访问的云文档。
-- **类型过滤**：可按文件类型筛选（文档、表格、幻灯片、多维表格、思维笔记、文件）。
-- **分页支持**：通过 `count` 和 `offset` 控制返回数量与翻页。
-- **所有者过滤**：可按文件 Owner 的 Open ID 缩小范围。
-- **结构化输出**：以 Markdown 表格形式展示结果，包含文档在飞书中的直达链接。
+| 文件 | 作用 |
+|---|---|
+| `config.json` | 存储 `app_id` 和 `app_secret`（**首次使用必填**） |
+| `get_oauth_code.py` | 步骤一：本地起临时服务器，浏览器授权，自动捕获 `code` |
+| `get_user_token.py` | 步骤二：用 `code` 换取 `user_access_token`，缓存至 `token_cache.json` |
+| `refresh_token.py` | 步骤三（可选）：用 `refresh_token` 静默刷新，无需再次浏览器授权 |
+| `token_cache.json` | 自动生成的 token 缓存（含 token、refresh_token、过期时间） |
+| `search.py` | 核心搜索脚本，用 `user_access_token` 调用搜索 API |
 
 ---
 
 ## 使用前提
 
-1. 在[飞书开放平台](https://open.feishu.cn/app)创建自建应用，获取 **`app_id`** 和 **`app_secret`**，填入本 Skill 目录下的 `config.json`。
-2. 对应的飞书应用需已开通以下**任意一项**权限：
-   - `drive:drive`（查看、评论、编辑和管理云文档所有文件）
-   - `drive:drive:readonly`（查看、评论和下载云文档所有文件）
-   - `search:docs:read`（搜索用户有权限的云文档）
-3. ⚠️ **关于 Token 类型的重要说明**：
-   - `get_token.py` 获取的是 **`tenant_access_token`**（应用身份），可直接用于调用大多数飞书 API。
-   - 搜索云文档接口原则上需要 **`user_access_token`**（用户身份）才能返回该用户可见的文档；若使用 `tenant_access_token` 搜索结果为空，属正常限制。
-   - 如需以用户身份搜索，须通过 OAuth 2.0 流程额外获取 `user_access_token`（超出本 Skill 范围）。
+1. 在[飞书开放平台](https://open.feishu.cn/app)创建**自建应用**，获取 `app_id` 和 `app_secret`，填入 `config.json`。
+2. 在应用的**权限管理**中开通以下权限（至少其一）：
+   - `search:docs:read`（推荐，最小权限）
+   - `drive:drive:readonly`
+   - `drive:drive`
+3. 在应用的**安全设置** → **重定向 URL** 中添加（一次性配置）：
+   ```
+   http://localhost:9527/callback
+   ```
 
 ---
 
-## 传参说明
-
-调用本 Skill 时，用户需要明确提供：
+## 传参说明（搜索阶段）
 
 | 参数 | 类型 | 必填 | 说明 |
 |---|---|---|---|
-| `user_access_token` | string | **是** | 飞书用户授权凭证，格式为 `u-xxxx` |
 | `search_key` | string | **是** | 要搜索的关键词，例如 `"项目周报"` |
 | `count` | int | 否 | 返回文档数量，范围 [1, 50]，默认 `10` |
-| `offset` | int | 否 | 偏移量（翻页用），默认 `0`，`offset + count < 200` |
-| `docs_types` | list | 否 | 文件类型过滤，可选值：`doc`、`sheet`、`slides`、`bitable`、`mindnote`、`file`。不填则搜索全部类型 |
-| `owner_ids` | list | 否 | 按文件所有者 Open ID 过滤，不填则不过滤 |
+| `offset` | int | 否 | 翻页偏移量，默认 `0`，`offset + count < 200` |
+| `docs_types` | list | 否 | 类型过滤，可选值：`doc`、`sheet`、`slides`、`bitable`、`mindnote`、`file` |
+| `owner_ids` | list | 否 | 按文件所有者 Open ID 过滤 |
 
 ---
 
 ## 执行步骤
 
-### 步骤 0：配置应用凭证（仅首次使用）
+### 步骤 0：配置应用凭证（仅首次，且 config.json 未填时）
 
-编辑本 Skill 目录下的 `config.json`，填入真实的 `app_id` 和 `app_secret`：
+编辑 `config.json`，填入真实凭证：
 
 ```json
 {
@@ -61,81 +61,89 @@ description: 根据关键词搜索当前用户在飞书（Lark）中可见的云
 
 > 凭证来源：飞书开放平台 → 我的应用 → 选择应用 → 凭证与基础信息。
 
-### 步骤 1：获取 tenant_access_token
+---
 
-运行 `get_token.py` 获取访问凭证（**`Cwd` 设置为本 Skill 所在目录**）：
+### 步骤 1：获取 user_access_token
+
+#### 情况 A：首次授权 / token 已过期无法刷新
+
+**1a. 获取 OAuth 授权码**（浏览器弹窗授权，自动捕获）：
 
 ```bash
-# 正常模式（展示 token 和有效期）
-python3 ./get_token.py
-
-# plain 模式（仅输出 token 字符串，便于直接复制传入 search.py）
-python3 ./get_token.py --plain
+python3 ./get_oauth_code.py
 ```
 
-token 有效期最长 **2 小时**，重复调用若剩余有效期 ≥ 30 分钟则返回原 token，无需担心频繁调用消耗配额。
+脚本会自动打开浏览器 → 用户点击授权 → 终端自动打印 `code`。
 
-### 步骤 2：准备搜索参数
+**1b. 用 code 换 user_access_token**：
 
-从用户对话中提取并整理搜索参数。若用户未提供 `count`，默认设为 `10`；`offset` 默认为 `0`。
+```bash
+python3 ./get_user_token.py --code "终端中拿到的code"
+```
 
-### 步骤 3：执行搜索脚本
+⚠️ `code` 仅能使用**一次**，有效期约 **5 分钟**，请立即执行。
 
-使用 `run_command` 工具运行 `search.py` 脚本，**`Cwd` 设置为本 Skill 所在目录**，通过命令行参数传入所有配置：
+成功后 token 自动保存至 `token_cache.json`，有效期 **2 小时**。
+
+---
+
+#### 情况 B：token 未过期或需要续期（推荐日常使用）
+
+先检查当前 token 剩余有效期：
+
+```bash
+python3 ./refresh_token.py --check
+```
+
+若需要刷新（无需浏览器授权）：
+
+```bash
+python3 ./refresh_token.py
+```
+
+⚠️ `refresh_token` 是**一次性**的，刷新成功后旧 `refresh_token` 立即失效，新凭证自动写入 `token_cache.json`。
+
+---
+
+### 步骤 2：执行搜索
+
+使用 `run_command` 工具运行 `search.py`，**`Cwd` 设置为本 Skill 所在目录**：
 
 ```bash
 python3 ./search.py \
-  --token "u-your_user_access_token" \
+  --token "$(python3 -c "import json; print(json.load(open('token_cache.json'))['user_access_token'])")" \
   --key "搜索关键词" \
-  --count 10 \
-  --offset 0 \
-  --types "doc,sheet"
+  --count 10
 ```
 
-> **注意**：`--types` 为逗号分隔的字符串，例如 `"doc,sheet"`；不传则搜全部类型。
+或在获取 token 后直接复制终端中输出的完整命令。
 
-脚本会调用飞书 API，将结果以 **Markdown 表格**格式打印到 stdout。
+常用参数示例：
 
-### 步骤 4：解析并展示结果
+```bash
+# 只搜文档和表格
+python3 ./search.py --token "eyJ..." --key "周报" --types "doc,sheet"
 
-读取脚本输出的 JSON，进行格式化展示。
+# 翻页（获取第 11-20 条）
+python3 ./search.py --token "eyJ..." --key "OKR" --count 10 --offset 10
+```
 
-**正常情况**（`code == 0`）：
+---
 
-以 Markdown 表格呈现结果，包含以下列：
-- **序号**
-- **标题**（附飞书文档直达链接）
-- **类型**（中文映射，见下方）
-- **文档 Token**
+### 步骤 3：展示结果
 
-文件类型中文映射：
+`search.py` 直接输出 Markdown 表格，包含：
 
-| 英文值 | 中文展示 |
-|---|---|
-| `doc` | 📄 文档 |
-| `sheet` | 📊 电子表格 |
-| `slides` | 📑 幻灯片 |
-| `bitable` | 🗃️ 多维表格 |
-| `mindnote` | 🧠 思维笔记 |
-| `file` | 📎 文件 |
+- 序号、文档标题（附飞书直达链接）、文件类型、文档 Token
+- 共找到 X 个文档（`total`）、是否还有更多（`has_more`）
 
-同时展示：
-- **共找到 X 个文档**（来自 `total` 字段）
-- **是否还有更多**（来自 `has_more` 字段）
+文件类型映射：`doc` 📄 文档 ｜ `sheet` 📊 电子表格 ｜ `slides` 📑 幻灯片 ｜ `bitable` 🗃️ 多维表格 ｜ `mindnote` 🧠 思维笔记 ｜ `file` 📎 文件
 
-**异常情况**（`code != 0`）：
-
-直接向用户展示错误码和错误信息，常见错误参考[服务端错误码说明](https://open.feishu.cn/document/ukTMukTMukTM/ugjM14COyUjL4ITN)。
-
-### 步骤 5：向用户汇报
-
-输出搜索结果表格，并根据 `has_more` 提示用户是否可通过增大 `offset` 获取更多结果。
+若 `has_more=true`，提示用户通过增加 `--offset` 翻页。
 
 ---
 
 ## 飞书文档直达链接规则
-
-根据 `docs_type` 和 `docs_token` 拼接跳转链接：
 
 | 类型 | 链接模板 |
 |---|---|
