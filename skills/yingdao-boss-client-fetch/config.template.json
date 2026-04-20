@@ -65,6 +65,13 @@
       "value": ""
     }
   },
+  "contract_datasource": {
+    "nsId": "",
+    "pageId": "",
+    "name": "queryContractOrder",
+    "envId": 1,
+    "editorMode": false
+  },
   "ssl_verify": {
     "boss_login": false,
     "default": true
