@@ -6,6 +6,7 @@ import math
 import sys
 import time
 import os
+import concurrent.futures
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -185,9 +186,9 @@ def fetch_contracts_for_clients(config: dict[str, Any], clients: list[dict[str, 
 
     print(f"Found {len(unique_clients)} unique clients. Fetching contracts...", file=sys.stderr)
     
-    for idx, custom_no in enumerate(unique_clients, 1):
-        print(f"[{idx}/{len(unique_clients)}] Fetching contracts for client: {custom_no}", file=sys.stderr)
-        
+    def fetch_single_client(custom_no, idx, total_len):
+        client_contracts = []
+        print(f"[{idx}/{total_len}] Fetching contracts for client: {custom_no}", file=sys.stderr)
         current_page = 1
         
         while True:
@@ -198,16 +199,25 @@ def fetch_contracts_for_clients(config: dict[str, Any], clients: list[dict[str, 
             for r in page_rows:
                 r["_customNo"] = custom_no
                 
-            all_contracts.extend(page_rows)
+            client_contracts.extend(page_rows)
             
-            if current_page >= returned_pages:
-                break
-            if not page_rows:
+            if current_page >= returned_pages or not page_rows:
                 break
                 
             current_page += 1
             
-        time.sleep(0.5)  # Rate limiting prevention
+        return client_contracts
+
+    # Use ThreadPoolExecutor to fetch clients concurrently
+    max_workers = config.get("network", {}).get("max_threads", 5)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(fetch_single_client, cno, i, len(unique_clients)) for i, cno in enumerate(unique_clients, 1)]
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                result = future.result()
+                all_contracts.extend(result)
+            except Exception as e:
+                print(f"Error fetching contract: {e}", file=sys.stderr)
 
     return all_contracts
 
