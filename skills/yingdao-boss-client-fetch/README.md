@@ -61,6 +61,7 @@ skills/
     │   └── api-notes.md
     └── scripts/
         ├── fetch_clients.py
+        ├── export_dashboard.py
         └── requirements.txt
 ```
 
@@ -252,7 +253,45 @@ python3 skills/yingdao-boss-client-fetch/scripts/fetch_clients.py --archive
 
 ---
 
-## 11. 与分析类 skill 的配合方式
+## 11. 数据看板导出（export_dashboard.py）
+
+该脚本对接 Boss 后台的异步看板导出功能，全流程自动化：
+
+### 使用前提
+
+`fetch_clients.py` 需要先运行过一次，使 `latest-clients.json` 存在（用于根据客户名称查找组织UUID）。
+
+### 运行方式
+
+```bash
+# 导出1个或多个客户的看板数据（日期默认：昨天 endDate，倒推365天 startDate）
+python3 skills/yingdao-boss-client-fetch/scripts/export_dashboard.py \
+  --client-names "南京***电子商务有限公司" "上海***电子商务有限公司"
+
+# 自定义输出目录
+python3 skills/yingdao-boss-client-fetch/scripts/export_dashboard.py \
+  --client-names "江苏***药房连锁有限公司" \
+  --output-dir ./runtime/yingdao-boss/exports
+
+# 手动指定结束日期（用于补历史数据）
+python3 skills/yingdao-boss-client-fetch/scripts/export_dashboard.py \
+  --client-names "南京***电子商务有限公司" \
+  --end-date 20260401
+```
+
+### 三步流程
+
+1. **提交导出申请**：POST `exportTenantDashboard`，传入组织UUID + 日期范围 + 固定 sheetNameList
+2. **轮询任务列表**：每10秒查询 `export/task/page`，对前10条结果按客户名称+endDate匹配，直到 `status=success`（最多等3分钟）
+3. **下载文件**：POST `download/with/audit` 拿到预签名COS URL，下载 xlsx 保存至本地
+
+### 输出
+
+xlsx 默认保存到 `/tmp`（可通过 `--output-dir` 或 config 中 `export_dashboard.output_dir` 修改）。同时打印 JSON 摘要至 stdout。
+
+---
+
+## 12. 与分析类 skill 的配合方式
 
 本技能推荐作为 **数据生产者 skill** 使用。
 

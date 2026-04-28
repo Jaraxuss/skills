@@ -8,7 +8,10 @@
     "boss_ascode_url": "https://boss-api.shadow-rpa.net/boss/api/v3/manager/login/getAsCode",
     "appstudio_token_url": "https://app.yingdaoapps.com/as/v1/user/auth/generateTokenByCode",
     "datasource_exec_url": "https://app.yingdaoapps.com/as/v1/page/datasource/exec",
-    "referer": "https://boss.shadow-rpa.net/"
+    "referer": "https://boss.shadow-rpa.net/",
+    "export_tenant_url": "https://boss-api.shadow-rpa.net/boss/api/v3/aftersales/dashboard/exportTenantDashboard",
+    "export_task_page_url": "https://boss-api.shadow-rpa.net/boss/api/v3/manager/export/task/page",
+    "export_download_url": "https://boss-api.shadow-rpa.net/boss/api/v3/manager/export/task/download/with/audit"
   },
   "defaults": {
     "default_business_group": "",
@@ -66,8 +69,8 @@
     }
   },
   "contract_datasource": {
-    "nsId": "",
-    "pageId": "",
+    "nsId": "706753409603948544",
+    "pageId": "807803111184228352",
     "name": "queryContractOrder",
     "envId": 1,
     "editorMode": false
@@ -75,6 +78,12 @@
   "ssl_verify": {
     "boss_login": false,
     "default": true
+  },
+  "export_dashboard": {
+    "output_dir": "/tmp",
+    "poll_interval_seconds": 10,
+    "poll_max_seconds": 180,
+    "task_page_size": 10
   },
   "network": {
     "use_env_proxy": false

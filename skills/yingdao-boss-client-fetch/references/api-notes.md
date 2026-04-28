@@ -158,3 +158,80 @@ runtime/yingdao-boss/latest-contracts.json
 2. 对每个组内的数据，判断 `createTime` 并经过降序排序，提取那条 **最近创建（Latest）的合同**。
 3. 进入该最新合同的内容，遍历 `contractOrderDTOList2` 订单明细数组。
 4. **剔除 `orderType` 不合规的条目**（排除 `once` 的那些）。取出剩下的订单中的 `endDate` 和 `startDate`，取 `endDate` 中的最大值，即视作这个客户最新的可用续费截止锚点。
+
+---
+
+# 数据看板导出模块（export_dashboard.py）
+
+该模块封装了 Boss 后台的异步看板导出接口，分三步完成。认证只需要 Boss `accessToken`，**不需要**走 asCode → AppStudio 链路。
+
+## 接口1：提交导出申请
+
+- 接口: `endpoints.export_tenant_url`
+- 方法: `POST`
+- Header: `Authorization: Bearer {boss_accessToken}`
+- 请求体:
+  ```json
+  {
+    "organizationUuid": "...",
+    "startDate": "20250427",
+    "endDate": "20260427",
+    "sheetNameList": ["企业月数据", "企业汇总数据", ...]
+  }
+  ```
+- `organizationUuid` 从 `latest-clients.json` 中通过 `组织名称` 匹配 `组织UUID` 字段获取。
+- `sheetNameList` 固定，见 `export_dashboard.py` 中的 `SHEET_NAME_LIST`。
+- 成功响应: `{"code": 200, "success": true}`
+
+## 接口2：查询导出任务列表
+
+- 接口: `endpoints.export_task_page_url`
+- 方法: `POST`
+- Header: `Authorization: Bearer {boss_accessToken}`
+- 请求体: `{"pageNum": 1, "pageSize": 10, "taskType": "user"}`
+- 响应中 `data` 字段为任务数组，**按 `createTime` 降序**，即最新任务排在前面。
+
+### 关键任务字段
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `uuid` | 字符串 | 任务唯一ID，步骤3下载时使用 |
+| `fileName` | 字符串 | 格式: `{组织名称}数据看板_{HHMMSS}_{startDate}-{endDate}` |
+| `status` | 字符串 | `success` / `pending` / `failed` |
+| `code` | 字符串 | 看板导出任务固定为 `tenant_board_export` |
+| `params` | JSON字符串 | 含 `tenantUuid`、`startDate`、`endDate`、`sheetNameList` 等 |
+
+### 任务匹配策略
+
+脚本通过以下条件定位刚提交的任务：
+1. `code == "tenant_board_export"`
+2. `status == "success"`
+3. `fileName` 包含目标 `组织名称`
+4. `fileName` 包含本次提交的 `endDate`（YYYYMMDD 格式）
+
+条件4使同一公司的历史任务与本次任务区分开。
+
+## 接口3：获取下载链接并下载
+
+- 接口: `endpoints.export_download_url`
+- 方法: `POST`
+- Header: `Authorization: Bearer {boss_accessToken}`
+- 请求体: `{"uuid": "<任务uuid>"}`
+- 成功响应: `{"code": 200, "success": true, "data": "https://cos.ap-shanghai...xlsx?sign=..."}`
+- `data` 字段为腾讯云 COS 预签名 URL，直接 `GET` 即可下载 xlsx，**无需附加认证 Header**。
+
+## 时序与等待
+
+提交请求后后台异步处理，通常 10–60 秒内完成。脚本采用同步轮询：
+
+```
+提交所有客户导出请求
+  ↓
+每隔 poll_interval_seconds（默认10s）查询任务列表
+  ↓
+全部匹配到 status=success 后退出轮询
+  ↓
+依次下载
+```
+
+轮询超时阈值由 `export_dashboard.poll_max_seconds`（默认180s）控制。

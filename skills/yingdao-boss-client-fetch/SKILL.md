@@ -174,10 +174,74 @@ Read `references/api-notes.md` when you need to change:
 - proxy behavior (`network.use_env_proxy`)
 - shared latest vs archive behavior (`storage.*`)
 
+## Dashboard Export Workflow (`export_dashboard.py`)
+
+This script automates the three-step async export flow for tenant dashboard data.
+
+1. Looks up `组织UUID` for each client by matching `组织名称` in `latest-clients.json`.
+2. Submits export requests to the Boss API (uses Boss `accessToken` directly — no AppStudio chain).
+3. Polls the export task list every 10 seconds (up to 3 minutes) until all tasks reach `status=success`, matched by client name and date in the `fileName`.
+4. Downloads each xlsx via the pre-signed COS URL and saves it to the output directory.
+
+Dates are computed automatically: `endDate` = yesterday, `startDate` = 365 days before `endDate`.
+
+### Prerequisites
+
+`fetch_clients.py` must have been run at least once so that `latest-clients.json` is available.
+
+### Running
+
+Export dashboards for one or more clients using defaults:
+
+```bash
+python3 skills/yingdao-boss-client-fetch/scripts/export_dashboard.py \
+  --client-names "南京***电子商务有限公司" "上海***电子商务有限公司"
+```
+
+With a custom config and output directory:
+
+```bash
+python3 skills/yingdao-boss-client-fetch/scripts/export_dashboard.py \
+  --client-names "江苏***药房连锁有限公司" \
+  --config ./runtime/yingdao-boss-client-fetch/config.local.json \
+  --output-dir ./runtime/yingdao-boss/exports
+```
+
+Override the end date (useful for back-filling):
+
+```bash
+python3 skills/yingdao-boss-client-fetch/scripts/export_dashboard.py \
+  --client-names "南京***电子商务有限公司" \
+  --end-date 20260401
+```
+
+### Output
+
+Downloaded xlsx files are saved to `output_dir` (default `/tmp`). The script also prints a JSON summary:
+
+```json
+{
+  "ok": true,
+  "start_date": "20250428",
+  "end_date": "20260427",
+  "results": [
+    {"client": "南京***电子商务有限公司", "status": "ok", "file": "/tmp/南京***电子商务有限公司数据看板_xxx.xlsx"}
+  ]
+}
+```
+
+### Config keys (`export_dashboard`)
+
+- `output_dir`: where to save xlsx files (default: `/tmp`)
+- `poll_interval_seconds`: seconds between task-list polls (default: `10`)
+- `poll_max_seconds`: total wait budget before timeout error (default: `180`)
+- `task_page_size`: number of recent tasks fetched per poll (default: `10`)
+
 ## Resources
 
 - `skills/yingdao-boss-client-fetch/scripts/fetch_clients.py`: end-to-end fetch script for client basic data
 - `skills/yingdao-boss-client-fetch/scripts/fetch_contracts.py`: end-to-end fetch script for client contracts
+- `skills/yingdao-boss-client-fetch/scripts/export_dashboard.py`: three-step async export of tenant dashboard xlsx files
 - `skills/yingdao-boss-client-fetch/scripts/analyze_expiring_orders.py`: analysis script for isolating clients with soon-to-expire subscriptions
 - `skills/yingdao-boss-client-fetch/scripts/requirements.txt`: Python dependencies
 - `skills/yingdao-boss-client-fetch/config.template.json`: configuration template without secrets
