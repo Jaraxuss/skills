@@ -235,3 +235,41 @@ runtime/yingdao-boss/latest-contracts.json
 ```
 
 轮询超时阈值由 `export_dashboard.poll_max_seconds`（默认180s）控制。
+
+---
+
+# 应用列表 (App Dashboard) JSON 结构参考
+
+这份描述用于梳理 `fetch_apps.py` 所获取的客户应用列表 (`latest-apps.json` 或 `apps-{client}.json`) 中字段的实际含义。
+字段映射参考了系统 UI 的列名，以及响应数据（时间类指标接口返回的单位是**秒**，UI 会除以 `3600` 转化为**小时**）。
+
+## 应用对象 (`result` 数组元素)
+
+| API 字段名 | UI 界面列名 | 备注说明 |
+| :--- | :--- | :--- |
+| `appName` | 应用名称 | RPA 应用的名称 |
+| `appBlockCnt` | 指令行数 | 应用包含的指令块数量 |
+| `createTime` | 创建时间 | `YYYY-MM-DD HH:mm:ss` |
+| `updateTime` | (更新时间) | |
+| `appType` | 应用类型 | `app` 对应 "应用"，`activity` 对应 "指令集" |
+| `appStatus` | 状态 | `r` 对应 "正常" |
+| `uiaTypes` | 自动化类型 | `pc` 对应 "PC自动化" |
+| `ownerAccount` | 应用所有人 | 创建/归属该应用的账号邮箱 |
+| `ownerName` | 应用所有人昵称 | 该账号对应的员工昵称 |
+| `totalDevelopUserCnt` | 当前开发者数量 | 参与该应用开发的账号数 |
+| `totalRunDura` | 总运行小时 | 接口单位为**秒**，UI 显示为 `/ 3600` (保留两位小数) |
+| `totalRunCnt` | (总运行次数) | 接口单位为次 |
+| `weekRunDura` | 上周运行小时 | 接口单位为**秒**，UI 显示为 `/ 3600` (保留两位小数) |
+| `weekRunCnt` | 上周运行次数 | |
+| `weekRunEndSuccRate` | (上周运行成功率) | 小数，例如 `0.93` 对应 `93%` |
+| `monthRunDura` | 上月运行小时 | 接口单位为**秒**，UI 显示为 `/ 3600` (保留两位小数) |
+| `monthRunCnt` | 上月运行次数 | |
+| `monthRunEndSuccRate` | (上月运行成功率) | 小数，例如 `0.90` 对应 `90%` |
+| `lastRunTime` | (最后运行时间) | `YYYY-MM-DD HH:mm:ss+08` |
+| `tenantUuid` | (租户 UUID) | 对应 `mergeInfo` 返回的 `enterpriseUuid` |
+
+> 📌 **元数据注入 (Metadata Injection)**: 
+> `fetch_apps.py` 脚本在拉取后会自动为每条应用数据注入三个额外的追踪字段：
+> - `_customNo`: 客户编号
+> - `_organizationUuid`: 组织 UUID
+> - `_organizationName`: 客户名称

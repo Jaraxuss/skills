@@ -137,6 +137,26 @@ This script:
 5. Groups clients into categories (`Expired (已过期)`, `0-30 Days`, `31-60 Days`). Clients expired for more than 30 days are automatically hidden.
 6. Prints the results securely to the console and outputs `contracts-expiration-summary.json` inside the `runtime/yingdao-boss` directory.
 
+### Fetching App Dashboards (Application Lists)
+
+You can pull the detailed list of applications and their usage statistics for your clients:
+
+```bash
+python3 skills/yingdao-boss-client-fetch/scripts/fetch_apps.py
+```
+
+This script will automatically:
+1. Load `latest-clients.json` to get `organizationUuid` values.
+2. Translate `organizationUuid` to `tenantUuid` via the Boss `mergeInfo` API.
+3. Fetch paginated app records via `queryAppDashboardInfo`.
+4. Output to `runtime/yingdao-boss/latest-apps.json`.
+
+Like the contract fetcher, you can pull apps for a specific client to save them independently:
+
+```bash
+python3 skills/yingdao-boss-client-fetch/scripts/fetch_apps.py --client-name "江苏**"
+```
+
 ## Output format
 
 The output uses a stable structure for downstream skills:
@@ -243,6 +263,7 @@ Downloaded xlsx files are saved to `output_dir` (default `/tmp`). The script als
 - `skills/yingdao-boss-client-fetch/scripts/fetch_contracts.py`: end-to-end fetch script for client contracts
 - `skills/yingdao-boss-client-fetch/scripts/export_dashboard.py`: three-step async export of tenant dashboard xlsx files
 - `skills/yingdao-boss-client-fetch/scripts/analyze_expiring_orders.py`: analysis script for isolating clients with soon-to-expire subscriptions
+- `skills/yingdao-boss-client-fetch/scripts/fetch_apps.py`: end-to-end fetch script for client application lists & dashboard stats
 - `skills/yingdao-boss-client-fetch/scripts/requirements.txt`: Python dependencies
 - `skills/yingdao-boss-client-fetch/config.template.json`: configuration template without secrets
 - `skills/yingdao-boss-client-fetch/references/api-notes.md`: request flow, enums, schema translation, and shared-data notes

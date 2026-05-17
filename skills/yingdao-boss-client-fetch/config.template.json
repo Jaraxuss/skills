@@ -11,7 +11,9 @@
     "referer": "https://boss.shadow-rpa.net/",
     "export_tenant_url": "https://boss-api.shadow-rpa.net/boss/api/v3/aftersales/dashboard/exportTenantDashboard",
     "export_task_page_url": "https://boss-api.shadow-rpa.net/boss/api/v3/manager/export/task/page",
-    "export_download_url": "https://boss-api.shadow-rpa.net/boss/api/v3/manager/export/task/download/with/audit"
+    "export_download_url": "https://boss-api.shadow-rpa.net/boss/api/v3/manager/export/task/download/with/audit",
+    "merge_info_url": "https://boss-api.shadow-rpa.net/boss/api/v1/organization/mergeInfo",
+    "app_dashboard_url": "https://boss-api.shadow-rpa.net/boss/api/v3/aftersales/appData/queryAppDashboardInfo"
   },
   "defaults": {
     "default_business_group": "",
