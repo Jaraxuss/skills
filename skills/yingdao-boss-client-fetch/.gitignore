@@ -1,0 +1,75 @@
+# =========================
+# Python cache / compiled
+# =========================
+__pycache__/
+*.py[codz]
+*$py.class
+
+# =========================
+# Virtual env / local env
+# =========================
+.env
+.env.*
+.envrc
+.venv/
+venv/
+env/
+ENV/
+
+# =========================
+# Local secrets / configs
+# =========================
+config.local.json
+**/config.local.json
+
+# =========================
+# Runtime data / fetched data
+# =========================
+runtime/
+**/runtime/
+outputs/
+**/outputs/
+archive/
+**/archive/
+
+# Shared latest dataset
+latest-clients.json
+**/latest-clients.json
+
+# =========================
+# Build / package artifacts
+# =========================
+dist/
+build/
+*.skill
+*.egg-info/
+.eggs/
+
+# =========================
+# Test / coverage / lint cache
+# =========================
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.pytype/
+.hypothesis/
+.tox/
+.nox/
+
+# =========================
+# Jupyter / misc Python tooling
+# =========================
+.ipynb_checkpoints/
+__pypackages__/
+
+# =========================
+# IDE / editor / OS noise
+# =========================
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
