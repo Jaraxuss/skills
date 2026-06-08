@@ -232,30 +232,20 @@ def build_query_payload(config: dict[str, Any], business_group: str, current_pag
     business_group_filter["values"] = [business_group]
 
     return {
-        "nsId": datasource["nsId"],
-        "name": datasource.get("name", "queryTable"),
-        "variables": {
-            "input_key": {"value": datasource.get("input_key", "")},
-            "listView_shaixuan": {
-                "instanceValues": [*fixed_filters, business_group_filter],
-            },
-            "buildShowColumnsData": {
-                "data": datasource.get("build_show_columns") or [],
-            },
-            "table1": {"currentPage": current_page, "pageSize": page_size},
-            "getSortCondition": {"value": datasource.get("sort_value")},
-        },
-        "pageId": datasource["pageId"],
-        "envId": datasource.get("envId", 1),
-        "editorMode": datasource.get("editorMode", False),
+        "keyword": "",
+        "conditions": [*fixed_filters, business_group_filter],
+        "showColumnIds": datasource.get("build_show_columns") or [],
+        "page": current_page,
+        "size": page_size,
+        "sortCondition": datasource.get("sort_value") or {"domainColumnId": 55, "isAsc": True}
     }
 
 
 
-def download_boss_table(session: requests.Session, config: dict[str, Any], appstudio_token: str, business_group: str, current_page: int, page_size: int) -> dict[str, Any]:
+def download_boss_table(session: requests.Session, config: dict[str, Any], access_token: str, business_group: str, current_page: int, page_size: int) -> dict[str, Any]:
     headers = {
-        "accept": "application/json",
-        "authorization": f"Bearer {appstudio_token}",
+        "accept": "*/*",
+        "authorization": f"Bearer {access_token}",
         "content-type": "application/json",
         "referer": config["endpoints"]["referer"],
     }
@@ -263,7 +253,7 @@ def download_boss_table(session: requests.Session, config: dict[str, Any], appst
     return request_json(
         session,
         "POST",
-        config["endpoints"]["datasource_exec_url"],
+        config["endpoints"]["clients_query_url"],
         headers=headers,
         json=payload,
         verify=(config.get("ssl_verify") or {}).get("default", True),
@@ -272,33 +262,22 @@ def download_boss_table(session: requests.Session, config: dict[str, Any], appst
 
 
 def extract_page_block(response: dict[str, Any], page_size: int) -> tuple[list[dict[str, Any]], int, int | None]:
-    candidate_paths = [
-        ["data", "result", "data", "data"],
-        ["data", "result", "data"],
-        ["result", "data", "data"],
-        ["data", "data"],
-        ["data"],
-    ]
-    block = None
-    for path in candidate_paths:
-        value = get_nested(response, path)
-        if isinstance(value, dict) and "dataList" in value:
-            block = value
-            break
-    if block is None:
-        raise ApiError("Could not locate datasource page block containing dataList")
+    data_block = response.get("data") or {}
+    if not isinstance(data_block, dict):
+        raise ApiError("Could not locate 'data' block in response")
 
-    rows = block.get("dataList") or []
+    rows = data_block.get("dataList") or []
     if not isinstance(rows, list):
-        raise ApiError("Datasource response field dataList is not a list")
+        raise ApiError("Response field 'dataList' is not a list")
 
-    total = block.get("total")
+    page_info = response.get("page") or {}
+    total = page_info.get("total")
     try:
         total = int(total) if total is not None else None
     except (TypeError, ValueError):
         total = None
 
-    pages = block.get("pages")
+    pages = page_info.get("pages")
     try:
         pages = int(pages) if pages is not None else None
     except (TypeError, ValueError):
@@ -315,8 +294,6 @@ def fetch_all_rows(config: dict[str, Any], business_group: str, page_size: int) 
     session = build_session(config)
     print("Authenticating with Yingdao Boss...", file=sys.stderr)
     access_token = login_to_yingdao_boss(session, config)
-    ascode = get_ascode(session, config, access_token)
-    appstudio_token = get_appstudio_token(session, config, ascode)
 
     current_page = 1
     total_pages = None
@@ -325,7 +302,7 @@ def fetch_all_rows(config: dict[str, Any], business_group: str, page_size: int) 
 
     while True:
         print(f"Fetching page {current_page}...", file=sys.stderr)
-        response = download_boss_table(session, config, appstudio_token, business_group, current_page, page_size)
+        response = download_boss_table(session, config, access_token, business_group, current_page, page_size)
         page_rows, returned_pages, returned_total = extract_page_block(response, page_size)
         rows.extend(page_rows)
 

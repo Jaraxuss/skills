@@ -84,14 +84,14 @@ def get_tenant_uuid(session: Any, config: dict[str, Any], boss_access_token: str
         
         data_block = resp.get("data")
         if not data_block or not isinstance(data_block, dict):
-            print(f"Warning: mergeInfo for {organization_uuid} returned no data block.", file=sys.stderr)
-            return ""
+            # Fall back to organizationUuid if no merge record is found
+            return organization_uuid
             
         enterprise_uuid = data_block.get("enterpriseUuid", "")
-        return enterprise_uuid
+        return enterprise_uuid or organization_uuid
     except Exception as e:
-        print(f"Failed to get tenantUuid for {organization_uuid}: {e}", file=sys.stderr)
-        return ""
+        print(f"Warning: Failed to get mergeInfo for {organization_uuid} ({e}). Falling back to org_uuid.", file=sys.stderr)
+        return organization_uuid
 
 
 def get_app_dashboard_page(session: Any, config: dict[str, Any], boss_access_token: str, tenant_uuid: str, current_page: int, page_size: int) -> dict[str, Any]:
@@ -131,6 +131,9 @@ def extract_app_page_block(response: dict[str, Any]) -> tuple[list[dict[str, Any
     """
     Parses the response and returns (rows, total_pages, total_items).
     """
+    if not response.get("success"):
+        raise ApiError(f"API returned success=false: {response.get('code')} - {response.get('msg')}")
+        
     data_block = response.get("data")
     if not data_block or not isinstance(data_block, dict):
         raise ApiError("Could not locate data block in response")
@@ -186,39 +189,42 @@ def fetch_apps_for_clients(config: dict[str, Any], clients: list[dict[str, Any]]
         org_uuid = client_info["org_uuid"]
         custom_no = client_info["custom_no"]
         
-        print(f"[{idx}/{total_len}] Resolving tenantUuid for client: {cname} ({custom_no})", file=sys.stderr)
-        
-        # 1. Resolve tenantUuid
-        tenant_uuid = get_tenant_uuid(session, config, boss_access_token, org_uuid)
-        if not tenant_uuid:
-            print(f"[{idx}/{total_len}] Skipping {cname}: Could not resolve tenantUuid.", file=sys.stderr)
-            return []
+        # Resolve tenantUuid (falls back to org_uuid if no merge record exists)
+        tenant_uuid = get_tenant_uuid(session, config, boss_access_token, org_uuid) or org_uuid
             
         print(f"[{idx}/{total_len}] Fetching apps for client: {cname} (Tenant: {tenant_uuid})", file=sys.stderr)
         
         # 2. Fetch pages
         current_page = 1
         while True:
-            try:
-                response = get_app_dashboard_page(session, config, boss_access_token, tenant_uuid, current_page, page_size)
-                page_rows, returned_pages, _ = extract_app_page_block(response)
-                
-                # Inject tracking metadata
-                for r in page_rows:
-                    r["_customNo"] = custom_no
-                    r["_organizationUuid"] = org_uuid
-                    r["_organizationName"] = cname
-                    
-                client_apps.extend(page_rows)
-                
-                if current_page >= returned_pages or not page_rows:
+            retries = 3
+            page_rows = None
+            returned_pages = 1
+            while retries > 0:
+                try:
+                    response = get_app_dashboard_page(session, config, boss_access_token, tenant_uuid, current_page, page_size)
+                    page_rows, returned_pages, _ = extract_app_page_block(response)
                     break
-                    
-                current_page += 1
-            except Exception as e:
-                print(f"[{idx}/{total_len}] Error fetching page {current_page} for {cname}: {e}", file=sys.stderr)
+                except Exception as e:
+                    retries -= 1
+                    if retries == 0:
+                        print(f"[{idx}/{total_len}] Error fetching page {current_page} for {cname} after retries: {e}", file=sys.stderr)
+                        return client_apps
+                    time.sleep(1)
+            
+            # Inject tracking metadata
+            for r in page_rows:
+                r["_customNo"] = custom_no
+                r["_organizationUuid"] = org_uuid
+                r["_organizationName"] = cname
+                
+            client_apps.extend(page_rows)
+            
+            if current_page >= returned_pages or not page_rows:
                 break
                 
+            current_page += 1
+            
         return client_apps
 
     # Use ThreadPoolExecutor to fetch clients concurrently

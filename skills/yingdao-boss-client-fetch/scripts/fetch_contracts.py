@@ -86,46 +86,22 @@ def load_clients(path: Path) -> dict[str, Any]:
 
 
 def build_contract_query_payload(config: dict[str, Any], custom_no: str, current_page: int, page_size: int) -> dict[str, Any]:
-    ds = config.get("contract_datasource")
-    if not ds:
-        raise SkillConfigError("Missing 'contract_datasource' in config.")
-
     return {
-        "nsId": ds["nsId"],
-        "name": ds.get("name", "queryContractOrder"),
-        "pageId": ds["pageId"],
-        "variables": {
-            "queryBaseInfo": {
-                "data": {
-                    "customNo": custom_no
-                }
-            },
-            "multiselect2": {
-                "value": ["approved", "auditing"]
-            },
-            "multiselect3": {
-                "value": []
-            },
-            "contract_table": {
-                "currentPage": current_page,
-                "pageSize": page_size
-            }
-        },
-        "envId": ds.get("envId", 1),
-        "editorMode": ds.get("editorMode", False)
+        "customNo": custom_no,
+        "statusList": ["approved", "auditing"],
+        "paymentStatusList": [],
+        "page": current_page,
+        "size": page_size,
+        "sortColumn": "id",
+        "isAsc": False
     }
 
 def extract_contract_page_block(response: dict[str, Any], page_size: int) -> tuple[list[dict[str, Any]], int, int | None]:
-    # Looking for result.data -> containing 'data' (array) and 'page'
-    data_block = get_nested(response, ["data", "result", "data"])
-    if not isinstance(data_block, dict):
-        raise ApiError("Could not locate data.result.data block in response")
-    
-    rows = data_block.get("data") or []
+    rows = response.get("data") or []
     if not isinstance(rows, list):
-        raise ApiError("Contract data is not a list")
+        raise ApiError("Contract data ('data' field) is not a list")
 
-    page_info = data_block.get("page") or {}
+    page_info = response.get("page") or {}
     total = page_info.get("total")
     try:
         total = int(total) if total is not None else None
@@ -143,10 +119,10 @@ def extract_contract_page_block(response: dict[str, Any], page_size: int) -> tup
 
     return rows, pages or 1, total
 
-def download_contracts(session: Any, config: dict[str, Any], appstudio_token: str, custom_no: str, current_page: int, page_size: int) -> dict[str, Any]:
+def download_contracts(session: Any, config: dict[str, Any], access_token: str, custom_no: str, current_page: int, page_size: int) -> dict[str, Any]:
     headers = {
-        "accept": "application/json",
-        "authorization": f"Bearer {appstudio_token}",
+        "accept": "*/*",
+        "authorization": f"Bearer {access_token}",
         "content-type": "application/json",
         "referer": config["endpoints"]["referer"],
     }
@@ -154,7 +130,7 @@ def download_contracts(session: Any, config: dict[str, Any], appstudio_token: st
     return request_json(
         session,
         "POST",
-        config["endpoints"]["datasource_exec_url"],
+        config["endpoints"]["contracts_query_url"],
         headers=headers,
         json=payload,
         verify=(config.get("ssl_verify") or {}).get("default", True),
@@ -164,8 +140,6 @@ def fetch_contracts_for_clients(config: dict[str, Any], clients: list[dict[str, 
     session = build_session(config)
     print("Authenticating with Yingdao Boss for contracts...", file=sys.stderr)
     access_token = login_to_yingdao_boss(session, config)
-    ascode = get_ascode(session, config, access_token)
-    appstudio_token = get_appstudio_token(session, config, ascode)
 
     all_contracts = []
     
@@ -192,7 +166,7 @@ def fetch_contracts_for_clients(config: dict[str, Any], clients: list[dict[str, 
         current_page = 1
         
         while True:
-            response = download_contracts(session, config, appstudio_token, custom_no, current_page, page_size)
+            response = download_contracts(session, config, access_token, custom_no, current_page, page_size)
             page_rows, returned_pages, _ = extract_contract_page_block(response, page_size)
             
             # Inject customNo to identify later if needed

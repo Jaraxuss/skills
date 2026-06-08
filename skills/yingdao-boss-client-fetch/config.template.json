@@ -8,6 +8,8 @@
     "boss_ascode_url": "https://boss-api.shadow-rpa.net/boss/api/v3/manager/login/getAsCode",
     "appstudio_token_url": "https://app.yingdaoapps.com/as/v1/user/auth/generateTokenByCode",
     "datasource_exec_url": "https://app.yingdaoapps.com/as/v1/page/datasource/exec",
+    "clients_query_url": "https://boss-api.shadow-rpa.net/boss/api/v3/aftersales/scene/query",
+    "contracts_query_url": "https://boss-api.shadow-rpa.net/boss/api/v3/oms/oms/contract/pageAndOrder",
     "referer": "https://boss.shadow-rpa.net/",
     "export_tenant_url": "https://boss-api.shadow-rpa.net/boss/api/v3/aftersales/dashboard/exportTenantDashboard",
     "export_task_page_url": "https://boss-api.shadow-rpa.net/boss/api/v3/manager/export/task/page",
