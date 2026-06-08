@@ -200,30 +200,6 @@ def login_to_yingdao_boss(session: requests.Session, config: dict[str, Any]) -> 
 
 
 
-def get_ascode(session: requests.Session, config: dict[str, Any], access_token: str) -> str:
-    headers = {"authorization": f"Bearer {access_token}"}
-    response = request_json(
-        session,
-        "GET",
-        config["endpoints"]["boss_ascode_url"],
-        headers=headers,
-        verify=(config.get("ssl_verify") or {}).get("default", True),
-    )
-    return extract_required(response, [["data"]], "Boss ascode")
-
-
-
-def get_appstudio_token(session: requests.Session, config: dict[str, Any], ascode: str) -> str:
-    response = request_json(
-        session,
-        "GET",
-        config["endpoints"]["appstudio_token_url"],
-        params={"code": ascode},
-        verify=(config.get("ssl_verify") or {}).get("default", True),
-    )
-    return extract_required(response, [["data", "accessToken"]], "AppStudio accessToken")
-
-
 
 def build_query_payload(config: dict[str, Any], business_group: str, current_page: int, page_size: int) -> dict[str, Any]:
     datasource = config["datasource"]
@@ -397,7 +373,6 @@ def resolve_output_paths(config: dict[str, Any], config_path: Path, business_gro
 
 def build_output_document(config: dict[str, Any], fetch_result: dict[str, Any]) -> dict[str, Any]:
     fetched_at = datetime.now(timezone.utc).astimezone().isoformat()
-    datasource = config.get("datasource") or {}
     return {
         "schema": "yingdao-boss-client-fetch.v1",
         "meta": {
@@ -407,8 +382,6 @@ def build_output_document(config: dict[str, Any], fetch_result: dict[str, Any]) 
             "page_count": fetch_result["page_count"],
             "row_count": fetch_result["row_count"],
             "total": fetch_result["total"],
-            "nsId": datasource.get("nsId"),
-            "pageId": datasource.get("pageId"),
         },
         "rows": fetch_result["rows"],
     }

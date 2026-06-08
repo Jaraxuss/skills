@@ -16,8 +16,6 @@ from fetch_clients import (
     ApiError,
     SkillConfigError,
     build_session,
-    get_appstudio_token,
-    get_ascode,
     get_nested,
     load_json,
     login_to_yingdao_boss,
