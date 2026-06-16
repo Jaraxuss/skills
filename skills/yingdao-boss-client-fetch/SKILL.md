@@ -157,6 +157,29 @@ Like the contract fetcher, you can pull apps for a specific client to save them 
 python3 skills/yingdao-boss-client-fetch/scripts/fetch_apps.py --client-name "江苏**"
 ```
 
+### Fetching Tenant Data Reports (Daily Statistics)
+
+You can pull the daily usage data reports (daily statistics) for your clients:
+
+```bash
+python3 skills/yingdao-boss-client-fetch/scripts/fetch_tenant_reports.py
+```
+
+This script will automatically:
+1. Load `latest-clients.json` to get `organizationUuid` values.
+2. Translate `organizationUuid` to `tenantUuid` via the Boss `mergeInfo` API.
+3. Fetch daily report data ranges via `queryTenantDataDayListRange`.
+4. Output to `runtime/yingdao-boss/latest-reports.json`.
+
+You can also target specific clients or override the date range (defaulting to the last 365 days):
+
+```bash
+python3 skills/yingdao-boss-client-fetch/scripts/fetch_tenant_reports.py \
+  --client-name "妮茜雅" \
+  --start-date "20250616" \
+  --end-date "20260615"
+```
+
 ## Output format
 
 The output uses a stable structure for downstream skills:
@@ -264,6 +287,7 @@ Downloaded xlsx files are saved to `output_dir` (default `/tmp`). The script als
 - `skills/yingdao-boss-client-fetch/scripts/export_dashboard.py`: three-step async export of tenant dashboard xlsx files
 - `skills/yingdao-boss-client-fetch/scripts/analyze_expiring_orders.py`: analysis script for isolating clients with soon-to-expire subscriptions
 - `skills/yingdao-boss-client-fetch/scripts/fetch_apps.py`: end-to-end fetch script for client application lists & dashboard stats
+- `skills/yingdao-boss-client-fetch/scripts/fetch_tenant_reports.py`: end-to-end fetch script for client daily tenant reports
 - `skills/yingdao-boss-client-fetch/scripts/requirements.txt`: Python dependencies
 - `skills/yingdao-boss-client-fetch/config.template.json`: configuration template without secrets
 - `skills/yingdao-boss-client-fetch/references/api-notes.md`: request flow, enums, schema translation, and shared-data notes
