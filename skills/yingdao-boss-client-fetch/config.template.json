@@ -74,6 +74,8 @@
     "task_page_size": 10
   },
   "network": {
-    "use_env_proxy": false
+    "use_env_proxy": false,
+    "max_threads": 2,
+    "request_delay_seconds": 0.5
   }
 }

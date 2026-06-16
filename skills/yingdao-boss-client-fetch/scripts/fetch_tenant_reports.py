@@ -59,6 +59,17 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="End date in YYYYMMDD format (defaults to yesterday)",
     )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="Limit the number of clients to fetch",
+    )
+    parser.add_argument(
+        "--random-select",
+        action="store_true",
+        help="Randomly select clients when limit is specified",
+    )
     return parser.parse_args()
 
 
@@ -172,7 +183,9 @@ def fetch_reports_for_clients(
     start_date: str,
     end_date: str,
     target_client_no: str = "", 
-    target_client_name: str = ""
+    target_client_name: str = "",
+    limit: int = 0,
+    random_select: bool = False
 ) -> list[dict[str, Any]]:
     session = build_session(config)
     print("Authenticating with Yingdao Boss for reports...", file=sys.stderr)
@@ -205,6 +218,14 @@ def fetch_reports_for_clients(
                 "org_uuid": org_uuid
             })
 
+    if random_select:
+        import random
+        random.shuffle(unique_clients)
+
+    if limit > 0:
+        unique_clients = unique_clients[:limit]
+
+    delay = float(config.get("network", {}).get("request_delay_seconds", 0.5))
     print(f"Found {len(unique_clients)} unique clients. Fetching reports...", file=sys.stderr)
     
     def fetch_single_client(client_info, idx, total_len):
@@ -215,6 +236,9 @@ def fetch_reports_for_clients(
         
         # Resolve tenantUuid (falls back to org_uuid if no merge record exists)
         tenant_uuid = get_tenant_uuid(session, config, boss_access_token, org_uuid) or org_uuid
+        
+        if delay > 0:
+            time.sleep(delay)
             
         print(f"[{idx}/{total_len}] Fetching reports for client: {cname} (Tenant: {tenant_uuid})", file=sys.stderr)
         
@@ -237,18 +261,20 @@ def fetch_reports_for_clients(
                     return client_reports
                 time.sleep(1)
                 
+        if delay > 0:
+            time.sleep(delay)
+            
         return client_reports
 
     # Use ThreadPoolExecutor to fetch clients concurrently
-    max_workers = config.get("network", {}).get("max_threads", 5)
+    max_workers = int(config.get("network", {}).get("max_threads", 2))
+    print(f"Starting fetch using max_threads={max_workers}, throttling={delay}s...", file=sys.stderr)
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [executor.submit(fetch_single_client, c, i, len(unique_clients)) for i, c in enumerate(unique_clients, 1)]
         for future in concurrent.futures.as_completed(futures):
             try:
                 result = future.result()
                 all_reports.extend(result)
-              # Set a tiny sleep to avoid aggressive rate limits
-                time.sleep(0.1)
             except Exception as e:
                 print(f"Error executing fetch task: {e}", file=sys.stderr)
 
@@ -319,7 +345,9 @@ def main() -> int:
             start_date,
             end_date,
             target_client_no=args.client_no, 
-            target_client_name=args.client_name
+            target_client_name=args.client_name,
+            limit=args.limit,
+            random_select=args.random_select
         )
     except ApiError as e:
         print(f"API Error: {e}", file=sys.stderr)
