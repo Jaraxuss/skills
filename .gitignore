@@ -142,3 +142,7 @@ skills-test
 runtime
 数据样例参考
 *.pyc
+
+.vscode/
+.workbuddy/
+skills/yingdao-boss-client-fetch/dashboard/dashboard.html

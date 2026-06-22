@@ -210,6 +210,10 @@ def fetch_reports_for_clients(
         if target_client_name and target_client_name not in client_name:
             continue
             
+        # Filter out private cloud clients since their tenant data cannot be accessed
+        if "私有云" in row.get("RPA部署类型", []):
+            continue
+            
         if org_uuid not in seen_org_uuids:
             seen_org_uuids.add(org_uuid)
             unique_clients.append({

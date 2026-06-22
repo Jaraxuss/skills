@@ -1,0 +1,2003 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>客户成功行动看板 — 影刀 BOSS</title>
+  <meta name="description" content="影刀 BOSS 客户成功行动看板 — 指标观察与 CSM 诊断双模式">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+  <style>
+    :root {
+      --bg-base: #07100f;
+      --bg-panel: rgba(12, 20, 24, 0.84);
+      --bg-panel-strong: rgba(17, 29, 34, 0.96);
+      --bg-control: rgba(28, 42, 48, 0.78);
+      --border: rgba(148, 163, 184, 0.13);
+      --border-strong: rgba(148, 163, 184, 0.24);
+      --text: #eef6f5;
+      --text-soft: #a8bbbc;
+      --text-muted: #718589;
+      --cyan: #22d3ee;
+      --blue: #60a5fa;
+      --green: #34d399;
+      --amber: #fbbf24;
+      --rose: #fb7185;
+      --violet: #a78bfa;
+      --radius: 8px;
+      --shadow: 0 16px 42px rgba(0, 0, 0, 0.28);
+    }
+
+    * { box-sizing: border-box; }
+    html { font-size: 14px; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at 8% 12%, rgba(34, 211, 238, 0.08), transparent 32%),
+        radial-gradient(circle at 88% 20%, rgba(52, 211, 153, 0.06), transparent 30%),
+        linear-gradient(145deg, #07100f 0%, #0b151c 48%, #08110f 100%);
+      color: var(--text);
+    }
+
+    button, input, select { font: inherit; }
+    .dashboard { max-width: 1520px; margin: 0 auto; padding: 24px 28px 48px; }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 20px;
+      padding-bottom: 18px;
+      margin-bottom: 18px;
+      border-bottom: 1px solid var(--border);
+    }
+    .title { margin: 0; font-size: 1.85rem; line-height: 1.15; letter-spacing: 0; font-weight: 800; }
+    .subtitle { margin-top: 8px; color: var(--text-soft); font-size: 0.9rem; }
+    .meta { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; color: var(--text-muted); font-size: 0.78rem; }
+    .meta span, .tag, .pill {
+      display: inline-flex;
+      align-items: center;
+      max-width: 100%;
+      padding: 5px 9px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: rgba(15, 23, 28, 0.56);
+      white-space: nowrap;
+    }
+
+    .mode-tabs, .controls, .subtabs, .filter-panel, .field-panel, .definition-panel {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding: 10px;
+      margin-bottom: 14px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--bg-panel);
+      box-shadow: var(--shadow);
+    }
+    .controls { gap: 12px; padding: 14px; }
+    .control-group { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .control-group.hidden { display: none; }
+    .mode-btn, .period-btn, .subtab-btn, .chip-btn, .ghost-btn {
+      min-height: 34px;
+      padding: 0 13px;
+      border: 1px solid transparent;
+      border-radius: 999px;
+      color: var(--text-soft);
+      background: var(--bg-control);
+      cursor: pointer;
+    }
+    .mode-btn.active, .period-btn.active, .subtab-btn.active, .chip-btn.active {
+      color: var(--text);
+      border-color: rgba(34, 211, 238, 0.42);
+      background: rgba(34, 211, 238, 0.13);
+    }
+    .ghost-btn {
+      min-height: 32px;
+      color: var(--text-soft);
+      border-color: var(--border);
+      background: rgba(15, 23, 28, 0.46);
+    }
+    .toggle-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 34px;
+      padding: 0 12px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      color: var(--text-soft);
+      background: rgba(15, 23, 28, 0.46);
+      cursor: pointer;
+    }
+    .toggle-label input { accent-color: var(--cyan); }
+    .control-label {
+      color: var(--text-muted);
+      font-size: 0.76rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .periods { display: flex; gap: 6px; flex-wrap: wrap; }
+    .date-range { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .date-sep { color: var(--text-muted); }
+    .select, .search, .date-input {
+      min-height: 34px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      background: var(--bg-control);
+    }
+    .select { padding: 0 34px 0 12px; }
+    .search { width: min(300px, 100%); padding: 0 12px; }
+    .date-input { padding: 0 10px; color-scheme: dark; }
+    .search::placeholder { color: var(--text-muted); }
+    .filter-panel, .field-panel, .definition-panel {
+      align-items: stretch;
+      flex-direction: column;
+      gap: 12px;
+      padding: 14px;
+    }
+    .filter-row, .field-row {
+      display: grid;
+      grid-template-columns: 88px 1fr auto;
+      gap: 10px;
+      align-items: center;
+    }
+    .filter-options, .field-options { display: flex; flex-wrap: wrap; gap: 7px; }
+    .chip-btn {
+      min-height: 30px;
+      padding: 0 10px;
+      border-color: var(--border);
+      font-size: 0.78rem;
+    }
+    .chip-action {
+      border: none;
+      color: var(--cyan);
+      background: transparent;
+      cursor: pointer;
+      font-size: 0.76rem;
+      white-space: nowrap;
+    }
+    .field-panel.hidden, .definition-body.hidden, .filter-panel.hidden { display: none; }
+    .field-actions { display: flex; justify-content: flex-end; }
+    .definition-panel { margin-top: 24px; }
+    .definition-toggle {
+      display: flex;
+      width: 100%;
+      justify-content: space-between;
+      align-items: center;
+      border: none;
+      color: var(--text);
+      background: transparent;
+      cursor: pointer;
+      font-weight: 800;
+      text-align: left;
+    }
+    .definition-body { width: 100%; overflow-x: auto; }
+    .definition-body table { min-width: 900px; white-space: normal; }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+    .summary-card, .client-card, .table-section, .drawer {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--bg-panel);
+      box-shadow: var(--shadow);
+    }
+    .summary-card { padding: 14px 16px; }
+    .summary-label { color: var(--text-muted); font-size: 0.76rem; font-weight: 700; }
+    .summary-value { margin-top: 8px; font-size: 1.72rem; font-weight: 800; }
+    .summary-note { margin-top: 4px; color: var(--text-muted); font-size: 0.75rem; }
+
+    .section { margin-top: 20px; }
+    .section-header, .group-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 12px;
+      margin-bottom: 10px;
+      padding: 0 2px;
+    }
+    .section-title, .group-title { margin: 0; font-size: 1.05rem; font-weight: 800; letter-spacing: 0; }
+    .section-desc, .group-desc { color: var(--text-muted); font-size: 0.82rem; }
+
+    .client-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      gap: 14px;
+    }
+    .client-card { min-width: 0; overflow: hidden; cursor: pointer; }
+    .client-card:hover { border-color: rgba(34, 211, 238, 0.34); }
+    .client-card.rescue, .client-card.expired, .client-card.data-check { border-color: rgba(251, 113, 133, 0.44); }
+    .client-card.watch, .client-card.drop, .client-card.health, .client-card.followup, .client-card.new-onboarding, .client-card.big-swing { border-color: rgba(251, 191, 36, 0.38); }
+    .client-card.opportunity, .client-card.personal, .client-card.renewal-healthy { border-color: rgba(52, 211, 153, 0.36); }
+    .client-card.stable { border-color: rgba(96, 165, 250, 0.26); }
+    .client-head { padding: 14px 14px 10px; border-bottom: 1px solid var(--border); }
+    .client-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+    .client-name { min-width: 0; font-size: 0.98rem; font-weight: 800; line-height: 1.35; overflow-wrap: anywhere; }
+    .client-name-wrap { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+    .client-rank {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 30px;
+      height: 22px;
+      padding: 0 8px;
+      border: 1px solid rgba(251, 113, 133, 0.34);
+      border-radius: 999px;
+      color: var(--rose);
+      background: rgba(251, 113, 133, 0.14);
+      font-size: 0.78rem;
+      font-weight: 800;
+    }
+    .tag.priority { color: #fde68a; background: rgba(251, 191, 36, 0.12); border-color: rgba(251, 191, 36, 0.24); }
+    .status-pill {
+      flex: 0 0 auto;
+      padding: 4px 8px;
+      border-radius: 999px;
+      color: var(--text);
+      font-size: 0.72rem;
+      font-weight: 700;
+      white-space: nowrap;
+      background: rgba(96, 165, 250, 0.16);
+    }
+    .status-pill.rescue, .status-pill.expired, .status-pill.data-check { background: rgba(251, 113, 133, 0.18); color: #fecdd3; }
+    .status-pill.drop, .status-pill.health, .status-pill.followup, .status-pill.new-onboarding, .status-pill.big-swing { background: rgba(251, 191, 36, 0.16); color: #fde68a; }
+    .status-pill.opportunity, .status-pill.personal, .status-pill.renewal-healthy { background: rgba(52, 211, 153, 0.15); color: #bbf7d0; }
+    .client-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    .tag {
+      border-radius: 6px;
+      color: var(--text-soft);
+      font-size: 0.73rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .tag.warn { color: #fde68a; background: rgba(251, 191, 36, 0.12); border-color: rgba(251, 191, 36, 0.24); }
+    .tag.danger { color: #fecdd3; background: rgba(251, 113, 133, 0.12); border-color: rgba(251, 113, 133, 0.24); }
+    .tag.good { color: #bbf7d0; background: rgba(52, 211, 153, 0.12); border-color: rgba(52, 211, 153, 0.24); }
+    .tag.estimate-loss { color: #fecdd3; background: rgba(251, 113, 133, 0.12); border-color: rgba(251, 113, 133, 0.24); }
+    .tag.estimate-down { color: #fed7aa; background: rgba(251, 146, 60, 0.12); border-color: rgba(251, 146, 60, 0.24); }
+    .tag.estimate-flat { color: var(--text-soft); background: rgba(148, 163, 184, 0.1); border-color: rgba(148, 163, 184, 0.2); }
+    .tag.estimate-up { color: #bbf7d0; background: rgba(52, 211, 153, 0.12); border-color: rgba(52, 211, 153, 0.24); }
+    .client-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(98px, 1fr));
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .stat { min-width: 0; padding: 8px; border-radius: 6px; background: rgba(3, 7, 18, 0.26); }
+    .stat-label { color: var(--text-muted); font-size: 0.7rem; }
+    .stat-value { margin-top: 3px; font-size: 0.94rem; font-weight: 800; overflow-wrap: anywhere; }
+    .change-up { color: var(--green); }
+    .change-down { color: var(--rose); }
+    .change-neutral { color: var(--text-muted); }
+    .reason, .action {
+      margin-top: 10px;
+      color: var(--text-soft);
+      font-size: 0.78rem;
+      line-height: 1.5;
+    }
+    .action { color: #bbf7d0; }
+    .chart { width: 100%; height: 190px; }
+    .chart-empty {
+      position: relative;
+    }
+    .chart-empty::after {
+      content: "无同期数据";
+      position: absolute;
+      top: 10px;
+      right: 14px;
+      color: rgba(168, 187, 188, 0.46);
+      font-size: 0.76rem;
+      pointer-events: none;
+    }
+
+    .drawer-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      display: none;
+      background: rgba(0, 0, 0, 0.48);
+    }
+    .drawer-backdrop.open { display: block; }
+    .drawer {
+      position: fixed;
+      z-index: 60;
+      top: 0;
+      right: 0;
+      width: var(--drawer-width, 840px);
+      height: 100vh;
+      overflow-y: auto;
+      border-radius: 0;
+      transform: translateX(102%);
+      transition: transform 180ms ease;
+      background: rgba(9, 18, 22, 0.98);
+    }
+    .drawer.open { transform: translateX(0); }
+    .drawer-resize {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 8px;
+      height: 100%;
+      z-index: 4;
+      cursor: ew-resize;
+      background: transparent;
+    }
+    .drawer-resize:hover, .drawer-resize.active { background: rgba(34, 211, 238, 0.28); }
+    .drawer-head {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 18px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(9, 18, 22, 0.98);
+    }
+    .drawer-title { margin: 0; font-size: 1.15rem; line-height: 1.35; overflow-wrap: anywhere; }
+    .drawer-close {
+      width: 34px;
+      height: 34px;
+      border: 1px solid var(--border);
+      border-radius: 50%;
+      color: var(--text-soft);
+      background: var(--bg-control);
+      cursor: pointer;
+    }
+    .drawer-body { padding: 18px; }
+    .drawer-section { margin-top: 18px; }
+    .drawer-section:first-child { margin-top: 0; }
+    .drawer-section h3 { margin: 0 0 10px; font-size: 0.94rem; }
+    .drawer-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px 18px;
+      margin-bottom: 14px;
+    }
+    .drawer-toolbar-group { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .metric-tab {
+      min-height: 30px;
+      padding: 0 10px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      color: var(--text-soft);
+      background: var(--bg-control);
+      cursor: pointer;
+      font-size: 0.76rem;
+    }
+    .metric-tab.active {
+      color: var(--text);
+      border-color: rgba(34, 211, 238, 0.42);
+      background: rgba(34, 211, 238, 0.13);
+    }
+    .drawer-charts {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(var(--drawer-cols, 1), minmax(0, 1fr));
+    }
+    .drawer-chart-card {
+      min-width: 0;
+      padding: 10px 12px 6px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: rgba(15, 23, 28, 0.42);
+    }
+    .drawer-chart-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 10px;
+      margin-bottom: 2px;
+    }
+    .drawer-chart-name { font-size: 0.86rem; font-weight: 700; }
+    .drawer-chart-agg { font-size: 0.82rem; font-weight: 700; color: var(--text-soft); white-space: nowrap; }
+    .drawer-chart-agg .delta-up { color: var(--green); }
+    .drawer-chart-agg .delta-down { color: var(--rose); }
+    .drawer-chart-agg .delta-flat { color: var(--text-muted); }
+    .drawer-chart { width: 100%; height: 200px; }
+    .contract-card {
+      padding: 12px;
+      margin-top: 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: rgba(15, 23, 28, 0.46);
+    }
+    .contract-title { font-weight: 800; }
+    .contract-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 8px;
+      color: var(--text-soft);
+      font-size: 0.8rem;
+    }
+    .contract-detail { margin-top: 8px; color: var(--text-muted); white-space: pre-wrap; font-size: 0.78rem; }
+    .boss-link {
+      display: inline-flex;
+      justify-content: center;
+      width: 100%;
+      margin-top: 18px;
+      padding: 11px 14px;
+      border: 1px solid rgba(34, 211, 238, 0.42);
+      border-radius: var(--radius);
+      color: var(--text);
+      text-decoration: none;
+      background: rgba(34, 211, 238, 0.13);
+      font-weight: 800;
+    }
+
+    .table-section { margin-top: 24px; padding: 16px; }
+    .table-title { margin: 0 0 12px; font-size: 1rem; font-weight: 800; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; min-width: 1120px; border-collapse: collapse; white-space: nowrap; }
+    th, td { padding: 10px 11px; border-bottom: 1px solid rgba(148, 163, 184, 0.08); text-align: left; }
+    th { color: var(--text-muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; }
+    td { color: var(--text-soft); font-size: 0.82rem; }
+    td:first-child { color: var(--text); font-weight: 700; }
+    .empty {
+      padding: 24px;
+      border: 1px dashed var(--border-strong);
+      border-radius: var(--radius);
+      color: var(--text-muted);
+      text-align: center;
+      background: rgba(15, 23, 42, 0.3);
+    }
+    .footer {
+      margin-top: 28px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 0.76rem;
+      text-align: center;
+    }
+
+    @media (max-width: 760px) {
+      .dashboard { padding: 16px; }
+      .header { align-items: flex-start; flex-direction: column; }
+      .meta { justify-content: flex-start; }
+      .client-grid { grid-template-columns: 1fr; }
+      .client-stats { grid-template-columns: 1fr; }
+      .filter-row, .field-row { grid-template-columns: 1fr; }
+      .drawer { width: 100vw; }
+      .drawer-resize { display: none; }
+      .drawer-charts { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+<div class="dashboard">
+  <header class="header">
+    <div>
+      <h1 class="title">客户成功行动看板</h1>
+      <div class="subtitle">指标观察用于纯看数据，CSM 诊断用于洞察与行动建议</div>
+    </div>
+    <div class="meta" id="meta"></div>
+  </header>
+
+  <section class="mode-tabs" id="mode-tabs"></section>
+
+  <section class="controls">
+    <span class="control-label">时间段</span>
+    <div class="periods" id="periods"></div>
+    <div class="date-range" id="custom-range">
+      <span class="control-label">自定义</span>
+      <input class="date-input" id="start-date" type="date" aria-label="开始日期">
+      <span class="date-sep">至</span>
+      <input class="date-input" id="end-date" type="date" aria-label="结束日期">
+    </div>
+    <span class="control-group metrics-only">
+      <span class="control-label">指标</span>
+      <select class="select" id="metric-select"></select>
+    </span>
+    <span class="control-group metrics-only">
+      <span class="control-label">对比</span>
+      <select class="select" id="comparison-select"></select>
+    </span>
+    <span class="control-label">搜索</span>
+    <input class="search" id="search" type="search" placeholder="搜索客户名称">
+    <button class="ghost-btn" id="filter-toggle" type="button">筛选</button>
+    <button class="ghost-btn" id="field-toggle" type="button">卡片字段 ⚙</button>
+    <label class="toggle-label"><input id="unified-y" type="checkbox"> 统一 Y 轴量纲</label>
+  </section>
+
+  <section class="filter-panel" id="filter-panel"></section>
+  <section class="field-panel hidden" id="field-panel"></section>
+  <section class="summary-grid" id="summary"></section>
+  <main id="main"></main>
+
+  <section class="table-section">
+    <h2 class="table-title" id="table-title">客户明细</h2>
+    <div class="table-wrap">
+      <table>
+        <thead id="table-head"></thead>
+        <tbody id="table-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="definition-panel">
+    <button class="definition-toggle" id="definition-toggle" type="button">
+      <span>指标定义与对比口径说明</span>
+      <span id="definition-arrow">展开 ↓</span>
+    </button>
+    <div class="definition-body hidden" id="definition-body"></div>
+  </section>
+
+  <footer class="footer">数据由 yingdao-boss-client-fetch 自动采集，重新运行 refresh_dashboard.py 可刷新数据与静态看板</footer>
+</div>
+<div class="drawer-backdrop" id="drawer-backdrop"></div>
+<aside class="drawer" id="drawer" aria-hidden="true"></aside>
+
+<script>
+const reportData = "__REPORT_DATA_PLACEHOLDER__";
+</script>
+
+<script>
+(function() {
+  "use strict";
+
+  const MODES = [
+    { key: "metrics", label: "指标观察" },
+    { key: "diagnosis", label: "CSM 诊断" }
+  ];
+  const DIAGNOSIS_VIEWS = [
+    { key: "queue", label: "行动队列" },
+    { key: "renewal", label: "续费季度" }
+  ];
+  const COMPARISONS = [
+    { key: "period", label: "环比" },
+    { key: "yoy", label: "去年同期" },
+    { key: "none", label: "不对比" }
+  ];
+  const METRICS = [
+    { key: "dayRunCnt", name: "运行次数", unit: "次", aggregate: "sum", format: formatNumber },
+    { key: "dayRunDura", name: "运行时长", unit: "小时", aggregate: "sum", format: formatDuration },
+    { key: "dayActiveAppCnt", name: "活跃应用数", unit: "个", aggregate: "avg", format: formatDecimal },
+    { key: "dayCreateAppCnt", name: "新建应用数", unit: "个", aggregate: "sum", format: formatNumber },
+    { key: "daySeniorAccountActiveCnt", name: "高级账号活跃", unit: "个", aggregate: "avg", format: formatDecimal },
+    { key: "accountSaturation", name: "账号饱和度", unit: "", aggregate: "avg", format: formatPercent },
+    { key: "healthIndicator", name: "健康度", unit: "", aggregate: "avg", format: formatScore },
+    { key: "seniorAccountUseRate", name: "高级账号使用率", unit: "", aggregate: "derived", format: formatPercent },
+    { key: "effectiveRunRate", name: "有效运行占比", unit: "", aggregate: "derived", format: formatPercent }
+  ];
+  const PERIODS = [
+    { key: "7d", label: "最近 7 天", days: 7 },
+    { key: "1m", label: "近一个月", months: 1 },
+    { key: "3m", label: "近三个月", months: 3 },
+    { key: "6m", label: "近半年", months: 6 },
+    { key: "1y", label: "近一年", years: 1 },
+    { key: "custom", label: "自定义", custom: true }
+  ];
+  const QUEUES = [
+    { key: "rescue", title: "续费抢救", desc: "60 天内到期且使用下滑或接近停用" },
+    { key: "expired", title: "已过期待挽回", desc: "已过期、已流失或状态异常，需要确认归档/挽回" },
+    { key: "renewal-healthy", title: "临期健康续费", desc: "临近到期但使用较好，适合推进续费确认" },
+    { key: "new-onboarding", title: "新签未激活", desc: "新签客户低使用，需推动启用辅导与场景共创" },
+    { key: "drop", title: "使用骤降", desc: "核心活跃指标明显下滑" },
+    { key: "health", title: "健康度低", desc: "健康度或账号使用状态偏弱" },
+    { key: "big-swing", title: "大客户波动", desc: "SKA/KA 客户出现明显波动" },
+    { key: "followup", title: "超期未跟进", desc: "最近跟进超期且存在使用或健康问题" },
+    { key: "opportunity", title: "机会客户", desc: "使用增长或饱和度较高，适合扩容/案例挖掘" },
+    { key: "personal", title: "个人版转化追踪", desc: "个人版用户活跃，企业版承接不足" },
+    { key: "stable", title: "稳定运营", desc: "未命中风险或机会规则的客户" },
+    { key: "data-check", title: "数据异常待核查", desc: "状态、到期或关键字段存在明显不一致" }
+  ];
+  const FILTERS = [
+    { key: "serviceStage", label: "服务阶段", allLabel: "全选阶段" },
+    { key: "customerTier", label: "客户分层", allLabel: "全选分层" },
+    { key: "renewalQuarter", label: "续费季度", allLabel: "全选季度" },
+    { key: "csOwner", label: "CS 负责人", allLabel: "全选 CS" }
+  ];
+  const DEFAULT_CARD_FIELDS = {
+    tags: ["customerTier", "csOwner", "serviceStage", "daysRemaining", "lastFollowUp", "estimatedRenewalType"],
+    stats: ["currentMetric", "compareChange", "activeApp"],
+    text: ["reason", "action"],
+    chart: true
+  };
+  const CARD_FIELD_GROUPS = [
+    {
+      key: "tags",
+      label: "标签区",
+      fields: [
+        { key: "customerTier", label: "客户分层" },
+        { key: "csOwner", label: "CS 负责人" },
+        { key: "serviceStage", label: "服务阶段" },
+        { key: "daysRemaining", label: "到期天数" },
+        { key: "lastFollowUp", label: "最近跟进" },
+        { key: "contractAmount", label: "合同金额" },
+        { key: "estimatedRenewalType", label: "预估续费类型" },
+        { key: "renewalQuarter", label: "续费季度" }
+      ]
+    },
+    {
+      key: "stats",
+      label: "指标区",
+      fields: [
+        { key: "currentMetric", label: "当前指标", locked: true },
+        { key: "compareChange", label: "对比变化" },
+        { key: "activeApp", label: "活跃应用" },
+        { key: "seniorAccountUseRate", label: "高级账号使用率" },
+        { key: "effectiveRunRate", label: "有效运行占比" },
+        { key: "healthIndicator", label: "健康度" },
+        { key: "accountSaturation", label: "账号饱和度" }
+      ]
+    },
+    {
+      key: "text",
+      label: "文本区",
+      fields: [
+        { key: "reason", label: "原因说明" },
+        { key: "action", label: "建议动作" }
+      ]
+    }
+  ];
+  const CARD_FIELD_STORAGE_KEY = "dashboard_card_fields";
+  const DRAWER_WIDTH_STORAGE_KEY = "dashboard_drawer_width";
+  const DRAWER_COLUMNS_STORAGE_KEY = "dashboard_drawer_chart_columns";
+  const DRAWER_WIDTH_DEFAULT = 840;
+  const DRAWER_WIDTH_MIN = 560;
+
+  const state = {
+    mode: "metrics",
+    diagnosisView: "queue",
+    period: "1m",
+    metric: "dayRunCnt",
+    comparison: "period",
+    search: "",
+    startDate: "",
+    endDate: "",
+    filters: {},
+    filterOptions: {},
+    cardFields: readCardFields(),
+    showFieldPanel: false,
+    showFilterPanel: false,
+    definitionOpen: false,
+    unifiedY: { metrics: true, diagnosis: false },
+    drawerClientName: "",
+    drawerComparison: "period",
+    drawerColumns: readDrawerColumns(),
+    drawerWidth: readDrawerWidth()
+  };
+  const chartInstances = new Map();
+  const drawerCharts = new Map();
+  let currentClients = [];
+
+  function escapeHtml(value) {
+    return String(value == null ? "" : value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+  function toNumber(value) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : 0;
+  }
+  function firstText(value) {
+    if (Array.isArray(value)) return value[0] || "";
+    return value == null ? "" : String(value);
+  }
+  function readCardFields() {
+    let parsed = {};
+    try {
+      parsed = JSON.parse(localStorage.getItem(CARD_FIELD_STORAGE_KEY) || "{}") || {};
+    } catch (err) {
+      parsed = {};
+    }
+    return normalizeCardFields(parsed);
+  }
+  function normalizeCardFields(value) {
+    const result = {
+      tags: Array.isArray(value.tags) ? value.tags.slice() : DEFAULT_CARD_FIELDS.tags.slice(),
+      stats: Array.isArray(value.stats) ? value.stats.slice() : DEFAULT_CARD_FIELDS.stats.slice(),
+      text: Array.isArray(value.text) ? value.text.slice() : DEFAULT_CARD_FIELDS.text.slice(),
+      chart: true
+    };
+    if (!result.stats.includes("currentMetric")) result.stats.unshift("currentMetric");
+    return result;
+  }
+  function saveCardFields() {
+    try {
+      localStorage.setItem(CARD_FIELD_STORAGE_KEY, JSON.stringify(state.cardFields));
+    } catch (err) {
+      // localStorage may be unavailable when opened from restricted contexts.
+    }
+  }
+  function readDrawerWidth() {
+    try {
+      const v = parseInt(localStorage.getItem(DRAWER_WIDTH_STORAGE_KEY) || "", 10);
+      if (Number.isFinite(v) && v > 0) return v;
+    } catch (err) {
+      // localStorage may be unavailable when opened from restricted contexts.
+    }
+    return DRAWER_WIDTH_DEFAULT;
+  }
+  function saveDrawerWidth() {
+    try {
+      localStorage.setItem(DRAWER_WIDTH_STORAGE_KEY, String(Math.round(state.drawerWidth)));
+    } catch (err) {
+      // localStorage may be unavailable when opened from restricted contexts.
+    }
+  }
+  function readDrawerColumns() {
+    try {
+      const v = parseInt(localStorage.getItem(DRAWER_COLUMNS_STORAGE_KEY) || "", 10);
+      if ([1, 2, 3].includes(v)) return v;
+    } catch (err) {
+      // localStorage may be unavailable when opened from restricted contexts.
+    }
+    return 1;
+  }
+  function saveDrawerColumns() {
+    try {
+      localStorage.setItem(DRAWER_COLUMNS_STORAGE_KEY, String(state.drawerColumns));
+    } catch (err) {
+      // localStorage may be unavailable when opened from restricted contexts.
+    }
+  }
+  function hasCardField(group, key) {
+    if (key === "currentMetric" || key === "trendChart") return true;
+    return (state.cardFields[group] || []).includes(key);
+  }
+  function toggleCardField(group, key) {
+    if (key === "currentMetric") return;
+    const fields = new Set(state.cardFields[group] || []);
+    if (fields.has(key)) fields.delete(key);
+    else fields.add(key);
+    state.cardFields[group] = Array.from(fields);
+    saveCardFields();
+    render();
+  }
+  function resetCardFields() {
+    state.cardFields = normalizeCardFields(DEFAULT_CARD_FIELDS);
+    saveCardFields();
+    render();
+  }
+  function filterValue(client, key) {
+    const p = client.profile || {};
+    if (key === "serviceStage") {
+      const status = p.cooperationStatus || "";
+      if (String(status).includes("已过期")) return "已过期";
+      if (String(status).includes("已流失") || String(p.serviceStage || "").includes("已流失")) return "已流失";
+      return p.serviceStage || "未填写";
+    }
+    if (key === "customerTier") return p.customerTier || "未分层";
+    if (key === "renewalQuarter") return p.renewalQuarter || "不在续费期";
+    if (key === "csOwner") return p.csOwner || "未填写";
+    return "";
+  }
+  function optionOrder(key, value) {
+    const orders = {
+      serviceStage: ["本年度新签", "首年续费", "多年续费", "买断使用", "售前阶段", "合作中（异常订单）", "已流失", "已过期", "未填写"],
+      customerTier: ["SKA", "KA", "SMB", "未分层"],
+      renewalQuarter: ["Q1", "Q2", "Q3", "Q4", "不在续费期"],
+    };
+    const order = orders[key] || [];
+    const idx = order.indexOf(value);
+    return idx === -1 ? order.length + value.localeCompare("zzzz", "zh-CN") : idx;
+  }
+  function initFilters(clients) {
+    FILTERS.forEach(filter => {
+      const values = Array.from(new Set(clients.map(c => filterValue(c, filter.key)).filter(Boolean)));
+      values.sort((a, b) => optionOrder(filter.key, a) - optionOrder(filter.key, b) || a.localeCompare(b, "zh-CN"));
+      state.filterOptions[filter.key] = values;
+      if (!Array.isArray(state.filters[filter.key])) {
+        state.filters[filter.key] = filter.key === "serviceStage" ? values.filter(v => v !== "已流失" && v !== "已过期") : values.slice();
+      } else {
+        const valid = new Set(values);
+        state.filters[filter.key] = state.filters[filter.key].filter(v => valid.has(v));
+        if (!state.filters[filter.key].length && values.length && filter.key !== "serviceStage") state.filters[filter.key] = values.slice();
+      }
+    });
+  }
+  function toggleFilterValue(key, value) {
+    const selected = new Set(state.filters[key] || []);
+    if (selected.has(value)) selected.delete(value);
+    else selected.add(value);
+    state.filters[key] = Array.from(selected);
+    render();
+  }
+  function setFilterAll(key, enabled) {
+    state.filters[key] = enabled ? (state.filterOptions[key] || []).slice() : [];
+    render();
+  }
+  function matchesFilters(client) {
+    if (state.search && !client.name.toLowerCase().includes(state.search.toLowerCase())) return false;
+    return FILTERS.every(filter => (state.filters[filter.key] || []).includes(filterValue(client, filter.key)));
+  }
+  function parseDate(s) {
+    return new Date(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8));
+  }
+  function ymdToInput(s) {
+    return s ? s.slice(0, 4) + "-" + s.slice(4, 6) + "-" + s.slice(6, 8) : "";
+  }
+  function inputToYmd(s) {
+    return s ? s.replace(/-/g, "") : "";
+  }
+  function ymdFromDate(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return "" + y + m + day;
+  }
+  function addMonths(d, months) {
+    const next = new Date(d);
+    const day = next.getDate();
+    next.setDate(1);
+    next.setMonth(next.getMonth() + months);
+    const lastDay = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+    next.setDate(Math.min(day, lastDay));
+    return next;
+  }
+  function fmtDate(s) {
+    return s ? s.slice(4, 6) + "/" + s.slice(6, 8) : "-";
+  }
+  function fmtDateFull(s) {
+    return s ? s.slice(0, 4) + "-" + s.slice(4, 6) + "-" + s.slice(6, 8) : "-";
+  }
+  function formatNumber(v) {
+    const n = Number(v || 0);
+    if (n >= 1e8) return (n / 1e8).toFixed(1) + "亿";
+    if (n >= 1e4) return (n / 1e4).toFixed(1) + "万";
+    return Math.round(n).toLocaleString("zh-CN");
+  }
+  function formatDuration(seconds) {
+    const h = Number(seconds || 0) / 3600;
+    if (h < 1) return Math.round(Number(seconds || 0) / 60) + "分";
+    if (h < 100) return h.toFixed(1);
+    return Math.round(h).toLocaleString("zh-CN");
+  }
+  function formatDecimal(v) {
+    return Number(v || 0).toFixed(1);
+  }
+  function formatScore(v) {
+    return Number(v || 0).toFixed(2);
+  }
+  function formatPercent(v) {
+    return (Number(v || 0) * 100).toFixed(1) + "%";
+  }
+  function formatChange(v) {
+    if (v == null || !Number.isFinite(v)) return "无对比";
+    const prefix = v > 0 ? "+" : "";
+    return prefix + v.toFixed(1) + "%";
+  }
+  function formatCompareValue(selected, mode) {
+    if (mode !== "diagnosis" && state.comparison === "none") return "不对比";
+    if (selected.change != null && Number.isFinite(selected.change)) return formatChange(selected.change);
+    if (mode !== "diagnosis" && state.comparison === "yoy" && !selected.hasPreviousRows) return "无同期数据";
+    return "无对比";
+  }
+  function changeClass(v) {
+    if (v == null || !Number.isFinite(v)) return "change-neutral";
+    if (v > 5) return "change-up";
+    if (v < -5) return "change-down";
+    return "change-neutral";
+  }
+  function metricDef(key) {
+    return METRICS.find(m => m.key === key) || METRICS[0];
+  }
+  function allDates() {
+    return Array.from(new Set(reportData.rows.map(r => r.statisticDate))).sort();
+  }
+  function initDateState() {
+    const dates = allDates();
+    if (!dates.length) return;
+    if (!state.endDate) state.endDate = dates[dates.length - 1];
+    if (!state.startDate) {
+      const start = addMonths(parseDate(state.endDate), -1);
+      start.setDate(start.getDate() + 1);
+      const candidate = ymdFromDate(start);
+      state.startDate = candidate < dates[0] ? dates[0] : candidate;
+    }
+  }
+  function clampRangeToData(startYmd, endYmd, dates) {
+    if (!dates.length) return { start: "", end: "" };
+    let start = startYmd || dates[0];
+    let end = endYmd || dates[dates.length - 1];
+    if (start > end) {
+      const tmp = start;
+      start = end;
+      end = tmp;
+    }
+    if (start < dates[0]) start = dates[0];
+    if (end > dates[dates.length - 1]) end = dates[dates.length - 1];
+    if (start > end) start = end;
+    return { start, end };
+  }
+  function periodRange(comparisonOverride) {
+    const dates = allDates();
+    const p = PERIODS.find(x => x.key === state.period) || PERIODS[1];
+    if (!dates.length) return { current: [], previous: [], compare: [], compareLabel: "无对比" };
+    initDateState();
+    const comparison = comparisonOverride || state.comparison;
+
+    let end = parseDate(dates[dates.length - 1]);
+    let curStart = new Date(end);
+    if (p.custom) {
+      const clamped = clampRangeToData(state.startDate, state.endDate, dates);
+      curStart = parseDate(clamped.start);
+      end = parseDate(clamped.end);
+    } else if (p.days) {
+      curStart.setDate(curStart.getDate() - p.days + 1);
+    } else if (p.months) {
+      curStart = addMonths(end, -p.months);
+      curStart.setDate(curStart.getDate() + 1);
+    } else if (p.years) {
+      curStart = addMonths(end, -12 * p.years);
+      curStart.setDate(curStart.getDate() + 1);
+    }
+
+    const curStartYmd = ymdFromDate(curStart);
+    const curEndYmd = ymdFromDate(end);
+    const durationDays = Math.max(1, Math.round((end - curStart) / 86400000) + 1);
+    let compareStartYmd = "";
+    let compareEndYmd = "";
+    let compareLabel = "无对比";
+
+    if (comparison === "period") {
+      const prevEnd = new Date(curStart);
+      prevEnd.setDate(prevEnd.getDate() - 1);
+      const prevStart = new Date(prevEnd);
+      prevStart.setDate(prevStart.getDate() - durationDays + 1);
+      compareStartYmd = ymdFromDate(prevStart);
+      compareEndYmd = ymdFromDate(prevEnd);
+      compareLabel = "环比";
+    } else if (comparison === "yoy") {
+      const yoyStart = addMonths(curStart, -12);
+      const yoyEnd = addMonths(end, -12);
+      compareStartYmd = ymdFromDate(yoyStart);
+      compareEndYmd = ymdFromDate(yoyEnd);
+      compareLabel = "去年同期";
+    }
+
+    return {
+      current: dates.filter(d => d >= curStartYmd && d <= curEndYmd),
+      previous: comparison === "none" ? [] : dates.filter(d => d >= compareStartYmd && d <= compareEndYmd),
+      compare: comparison !== "none",
+      currentLabel: fmtDateFull(curStartYmd) + " ~ " + fmtDateFull(curEndYmd),
+      previousLabel: compareStartYmd ? fmtDateFull(compareStartYmd) + " ~ " + fmtDateFull(compareEndYmd) : "",
+      compareLabel
+    };
+  }
+  function aggregate(rows, key, method) {
+    if (!rows.length) return 0;
+    const sorted = rows.slice().sort((a, b) => a.statisticDate.localeCompare(b.statisticDate));
+    if (key === "seniorAccountUseRate") {
+      const opened = aggregate(rows, "accountSeniorCnt", "last");
+      const quota = aggregate(rows, "accountSeniorQuota", "last");
+      return quota ? opened / quota : 0;
+    }
+    if (key === "effectiveRunRate") {
+      const used = aggregate(rows, "useDayRunDura", "sum");
+      const total = aggregate(rows, "dayRunDura", "sum");
+      return total ? used / total : 0;
+    }
+    const values = sorted.map(r => Number(r[key] || 0));
+    if (method === "avg") return values.reduce((a, b) => a + b, 0) / values.length;
+    if (method === "last") return values[values.length - 1];
+    return values.reduce((a, b) => a + b, 0);
+  }
+  function change(current, previous) {
+    if (!previous) return null;
+    return ((current - previous) / Math.abs(previous)) * 100;
+  }
+  function normalizeName(value) {
+    return String(value || "").trim();
+  }
+  function getProfile(name, rows) {
+    const profiles = reportData.clientProfiles || {};
+    const byName = profiles[name];
+    if (byName) return byName;
+    const first = rows[0] || {};
+    return profiles[first._organizationUuid] || profiles[first._customNo] || {
+      name,
+      csOwner: "未填写",
+      serviceStage: "未填写",
+      cooperationStatus: "未填写",
+      deploymentType: "未填写"
+    };
+  }
+  function getExpiration(name, profile) {
+    const expirations = reportData.expirationProfiles || {};
+    return expirations[name] || expirations[profile.shortName] || null;
+  }
+  function parseFollowUpDate(value) {
+    if (!value) return null;
+    const text = String(value).slice(0, 10);
+    const d = new Date(text + "T00:00:00");
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  function tierScore(tier) {
+    if (tier === "SKA") return 45;
+    if (tier === "KA") return 30;
+    if (tier === "SMB") return 15;
+    return 5;
+  }
+  function renewalQuarter(profile) {
+    return profile.renewalQuarter || "不在续费期";
+  }
+  function getClients(range) {
+    const rowsByClient = new Map();
+    reportData.rows.forEach(row => {
+      const name = normalizeName(row._organizationName);
+      if (!name) return;
+      if (!rowsByClient.has(name)) rowsByClient.set(name, []);
+      rowsByClient.get(name).push(row);
+    });
+
+    const curSet = new Set(range.current);
+    const prevSet = new Set(range.previous);
+    const latestDate = allDates()[allDates().length - 1];
+    const baseDate = parseDate(latestDate);
+
+    return Array.from(rowsByClient.entries()).map(([name, rows]) => {
+      const profile = getProfile(name, rows);
+      const expiration = getExpiration(name, profile);
+      const currentRows = rows.filter(r => curSet.has(r.statisticDate));
+      const previousRows = rows.filter(r => prevSet.has(r.statisticDate));
+      const values = {};
+
+      METRICS.forEach(m => {
+        const current = aggregate(currentRows, m.key, m.aggregate);
+        const previous = aggregate(previousRows, m.key, m.aggregate);
+        values[m.key] = { current, previous, change: range.compare ? change(current, previous) : null, hasPreviousRows: previousRows.length > 0 };
+      });
+
+      const daysFromClient = Number(profile.daysRemaining);
+      const daysFromExpiration = expiration && expiration.daysRemaining != null ? Number(expiration.daysRemaining) : null;
+      const daysRemaining = Number.isFinite(daysFromExpiration) ? daysFromExpiration : (Number.isFinite(daysFromClient) ? daysFromClient : null);
+      const followDate = parseFollowUpDate(profile.lastFollowUp);
+      const daysSinceFollowUp = followDate ? Math.max(0, Math.round((baseDate - followDate) / 86400000)) : null;
+      const diagnosis = diagnoseClient(values, daysRemaining, profile, expiration, daysSinceFollowUp);
+      const selected = values[state.metric] || { current: 0, previous: 0, change: null };
+
+      return {
+        name,
+        profile,
+        expiration,
+        rows,
+        currentRows,
+        previousRows,
+        values,
+        selected,
+        daysRemaining,
+        daysSinceFollowUp,
+        diagnosis,
+        sortValue: selected.current
+      };
+    });
+  }
+  function diagnoseClient(values, daysRemaining, profile, expiration, daysSinceFollowUp) {
+    const runCnt = values.dayRunCnt || {};
+    const runDura = values.dayRunDura || {};
+    const activeApp = values.dayActiveAppCnt || {};
+    const createApp = values.dayCreateAppCnt || {};
+    const saturation = values.accountSaturation || {};
+    const health = values.healthIndicator || {};
+    const seniorRate = values.seniorAccountUseRate || {};
+    const effectiveRate = values.effectiveRunRate || {};
+
+    const stage = String(profile.serviceStage || "");
+    const status = String(profile.cooperationStatus || "");
+    const tier = String(profile.customerTier || "");
+    const nearExpiry = daysRemaining != null && daysRemaining <= 60;
+    const veryNearExpiry = daysRemaining != null && daysRemaining <= 30;
+    const expired = (daysRemaining != null && daysRemaining < 0) || status.includes("已过期") || status.includes("已流失") || stage.includes("已流失");
+    const dataOdd = daysRemaining === 0 && !expired && status.includes("合作中");
+    const coreDrops = [runCnt.change, runDura.change, activeApp.change].filter(v => v != null && Number.isFinite(v));
+    const sharpDrop = coreDrops.some(v => v <= -30);
+    const mildDrop = coreDrops.some(v => v <= -15);
+    const nearZeroUse = runCnt.current <= 3 && runDura.current <= 1800 && activeApp.current <= 0.5;
+    const lowUse = runCnt.current < 50 && activeApp.current < 1.5;
+    const stableUse = runCnt.current >= 100 || runDura.current >= 7200 || activeApp.current >= 2;
+    const lowHealth = health.current > 0 && health.current < 2;
+    const highValue = tier === "SKA" || tier === "KA";
+    const followupOverdue = daysSinceFollowUp != null && daysSinceFollowUp > 60;
+    const personalUsers = toNumber(profile.personalUserCount);
+    const personalDeepUsers = toNumber(profile.personalDeepUserCount);
+    const personalCandidate = String(profile.usesPersonalEdition || "") === "是" && (personalUsers > 0 || personalDeepUsers > 0);
+    const personalSignal = personalCandidate && (personalDeepUsers >= 1 || personalUsers >= 10 || (highValue && personalUsers >= 5));
+    const personalGap = personalSignal && seniorRate.current < 0.85;
+    const growth = stableUse && coreDrops.some(v => v >= 25);
+    const saturationHigh = saturation.current >= 0.8 || seniorRate.current >= 0.8;
+    const actions = [];
+    const reasons = [];
+    let queue = "stable";
+    let priority = tierScore(tier);
+
+    if (dataOdd) {
+      queue = "data-check";
+      priority += 20;
+      reasons.push("合作中但到期天数为 0，需核查到期字段");
+      actions.push("先确认合同/到期数据是否同步正确，再判断续费动作");
+    } else if (expired) {
+      queue = "expired";
+      priority += 18;
+      reasons.push("客户已过期、已流失或服务阶段显示已流失");
+      actions.push("确认是否挽回；无法挽回则归档并同步销售/管理口径");
+    } else if (nearExpiry && (sharpDrop || nearZeroUse)) {
+      queue = "rescue";
+      priority += veryNearExpiry ? 130 : 110;
+      reasons.push("60 天内到期且核心使用下滑或接近停用");
+      actions.push("本周启动续费抢救沟通，结合使用优化方案和业务场景复盘");
+    } else if (nearExpiry && stableUse) {
+      queue = "renewal-healthy";
+      priority += veryNearExpiry ? 88 : 70;
+      reasons.push("临近到期且仍保持稳定使用");
+      actions.push("推进续费确认，争取提前锁定续费计划");
+    } else if (stage.includes("本年度新签") && lowUse) {
+      queue = "new-onboarding";
+      priority += 82;
+      reasons.push("新签客户当前使用不足");
+      actions.push("安排启用辅导或场景共创，确认实施障碍");
+    } else if (highValue && sharpDrop) {
+      queue = "big-swing";
+      priority += 95;
+      reasons.push("高价值客户核心指标明显波动");
+      actions.push("优先回访确认业务节奏变化，评估是否影响续费或扩容");
+    } else if (mildDrop) {
+      queue = "drop";
+      priority += 65;
+      reasons.push("核心指标环比明显下降");
+      actions.push("确认流程是否停用、迁移、异常或进入业务淡季");
+    } else if (lowHealth || (saturation.current > 0 && saturation.current < 0.15)) {
+      queue = "health";
+      priority += 58;
+      reasons.push("健康度或账号使用状态偏弱");
+      actions.push("复盘账号启用和场景覆盖，识别低健康原因");
+    } else if (followupOverdue && (lowUse || lowHealth || mildDrop)) {
+      queue = "followup";
+      priority += 54;
+      reasons.push("超过 60 天未跟进且存在使用/健康问题");
+      actions.push("本周安排回访，补齐客户状态与下一步计划");
+    } else if (personalSignal) {
+      queue = "personal";
+      priority += 42 + Math.min(28, personalDeepUsers * 4 + personalUsers);
+      reasons.push(personalGap ? "个人版使用信号明显，企业版仍有承接空间" : "个人版存在使用信号，适合持续追踪转化机会");
+      actions.push("梳理个人版高频用户与场景，推进企业版转化、账号启用或扩容验证");
+    } else if (growth || (saturationHigh && stableUse && createApp.change >= 10)) {
+      queue = "opportunity";
+      priority += 44;
+      reasons.push("使用增长、饱和度高或新建应用增加");
+      actions.push("询问新增场景，判断扩容、案例或提前续费机会");
+    } else if (nearExpiry || expiration) {
+      queue = "renewal-healthy";
+      priority += 42;
+      reasons.push("存在续费窗口，需要持续推进");
+      actions.push("确认续费计划、预算与关键决策人时间表");
+    } else {
+      queue = "stable";
+      priority += 12;
+      reasons.push("当前未命中风险或机会规则");
+      actions.push("维持常规运营节奏，按季度复盘使用成效");
+    }
+
+    if (sharpDrop) priority += 35;
+    if (nearZeroUse) priority += 30;
+    if (nearExpiry) priority += Math.max(0, 60 - Math.max(0, daysRemaining));
+    if (followupOverdue) priority += Math.min(35, Math.floor(daysSinceFollowUp / 10));
+    if (personalSignal && queue !== "personal") priority += 8;
+
+    const expiryText = daysRemaining == null ? "未知" : Math.round(daysRemaining) + " 天";
+    const pct = v => (v != null && Number.isFinite(v)) ? formatChange(v) : "无对比";
+    const facts = [];
+    if (queue === "data-check") {
+      facts.push("合作状态=" + (status || "未填写"), "到期剩余 " + expiryText);
+    } else if (queue === "expired") {
+      facts.push("状态=" + (status || stage || "未填写"));
+      if (daysRemaining != null && daysRemaining < 0) facts.push("已过期 " + Math.abs(Math.round(daysRemaining)) + " 天");
+    } else if (queue === "rescue") {
+      facts.push("到期剩余 " + expiryText, "运行次数环比 " + pct(runCnt.change), "活跃应用环比 " + pct(activeApp.change));
+    } else if (queue === "renewal-healthy") {
+      facts.push("到期剩余 " + expiryText, "运行次数 " + formatNumber(runCnt.current) + " 次", "活跃应用 " + formatDecimal(activeApp.current) + " 个");
+    } else if (queue === "new-onboarding") {
+      facts.push("服务阶段=" + (stage || "未填写"), "运行次数 " + formatNumber(runCnt.current) + " 次", "活跃应用 " + formatDecimal(activeApp.current) + " 个");
+    } else if (queue === "big-swing") {
+      facts.push("客户分层=" + (tier || "未分层"), "运行次数环比 " + pct(runCnt.change), "活跃应用环比 " + pct(activeApp.change));
+    } else if (queue === "drop") {
+      facts.push("运行次数环比 " + pct(runCnt.change), "运行时长环比 " + pct(runDura.change), "活跃应用环比 " + pct(activeApp.change));
+    } else if (queue === "health") {
+      facts.push("健康度 " + formatScore(health.current), "账号饱和度 " + formatPercent(saturation.current));
+    } else if (queue === "followup") {
+      facts.push(daysSinceFollowUp == null ? "跟进时间未知" : daysSinceFollowUp + " 天未跟进", "运行次数 " + formatNumber(runCnt.current) + " 次", "健康度 " + formatScore(health.current));
+    } else if (queue === "personal") {
+      facts.push("个人版用户 " + Math.round(personalUsers) + " 人", "深度使用 " + Math.round(personalDeepUsers) + " 人", "高级账号使用率 " + formatPercent(seniorRate.current));
+    } else if (queue === "opportunity") {
+      facts.push("运行次数环比 " + pct(runCnt.change), "新建应用环比 " + pct(createApp.change), "账号饱和度 " + formatPercent(saturation.current));
+    } else {
+      facts.push("运行次数 " + formatNumber(runCnt.current) + " 次", "活跃应用 " + formatDecimal(activeApp.current) + " 个", "健康度 " + formatScore(health.current));
+    }
+
+    return {
+      queue,
+      priority,
+      reason: reasons[0] || "当前状态稳定",
+      action: actions[0] || "维持常规运营",
+      explainTitle: "队列定义：" + queueDesc(queue),
+      explainDetail: "命中依据：" + facts.join("；"),
+      personalCandidate,
+      personalGap,
+      personalSignal
+    };
+  }
+  function queueTitle(key) {
+    const queue = QUEUES.find(q => q.key === key);
+    return queue ? queue.title : "稳定运营";
+  }
+  function queueDesc(key) {
+    const queue = QUEUES.find(q => q.key === key);
+    return queue ? queue.desc : "";
+  }
+  function tag(text, cls) {
+    return '<span class="tag ' + (cls || "") + '">' + escapeHtml(text) + '</span>';
+  }
+  function estimateTag(value) {
+    const text = String(value || "");
+    if (!text) return "";
+    if (text.includes("流失")) return tag(text, "estimate-loss");
+    if (text.includes("减购")) return tag(text, "estimate-down");
+    if (text.includes("增购")) return tag(text, "estimate-up");
+    return tag(text, "estimate-flat");
+  }
+  function followTag(client) {
+    if (client.daysSinceFollowUp == null) return tag("最近跟进 未知", "warn");
+    if (client.daysSinceFollowUp > 60) return tag(client.daysSinceFollowUp + "天未跟进", "danger");
+    if (client.daysSinceFollowUp > 30) return tag(client.daysSinceFollowUp + "天未跟进", "warn");
+    return tag(client.daysSinceFollowUp + "天前跟进", "good");
+  }
+  function daysText(days) {
+    return days == null ? "未知" : Math.round(days) + "天";
+  }
+  function stat(label, value, unit) {
+    return '<div class="stat"><div class="stat-label">' + escapeHtml(label) + '</div><div class="stat-value">' + value + (unit ? ' <span class="stat-label">' + unit + '</span>' : '') + '</div></div>';
+  }
+  function chartId(name, prefix) {
+    let hash = 0;
+    const s = prefix + "::" + name;
+    for (let i = 0; i < s.length; i++) hash = ((hash << 5) - hash + s.charCodeAt(i)) | 0;
+    return "chart-" + Math.abs(hash);
+  }
+  function renderMeta() {
+    const dates = allDates();
+    const meta = reportData.meta || {};
+    const dashboardMeta = reportData.dashboardMeta || {};
+    document.getElementById("meta").innerHTML = [
+      "业务组 " + escapeHtml(meta.business_group || "-"),
+      "数据 " + fmtDateFull(dates[0]) + " ~ " + fmtDateFull(dates[dates.length - 1]),
+      "日报 " + formatNumber((reportData.rows || []).length) + " 条",
+      "日报客户 " + formatNumber(new Set(reportData.rows.map(r => r._organizationName)).size) + " 个",
+      "客户主数据 " + formatNumber(dashboardMeta.client_profile_count || 0) + " 个"
+    ].map(x => "<span>" + x + "</span>").join("");
+  }
+  function renderControls() {
+    const range = periodRange();
+    const dates = allDates();
+    document.querySelectorAll(".metrics-only").forEach(el => {
+      el.classList.toggle("hidden", state.mode !== "metrics");
+    });
+    document.getElementById("mode-tabs").innerHTML = MODES.map(m =>
+      '<button class="mode-btn' + (m.key === state.mode ? " active" : "") + '" data-mode="' + m.key + '">' + m.label + '</button>'
+    ).join("");
+    document.querySelectorAll(".mode-btn").forEach(btn => {
+      btn.onclick = () => {
+        state.mode = btn.dataset.mode;
+        render();
+      };
+    });
+
+    const periods = document.getElementById("periods");
+    periods.innerHTML = PERIODS.map(p => (
+      '<button class="period-btn' + (p.key === state.period ? " active" : "") + '" data-period="' + p.key + '">' + p.label + "</button>"
+    )).join("");
+    periods.querySelectorAll("button").forEach(btn => {
+      btn.onclick = () => {
+        state.period = btn.dataset.period;
+        render();
+      };
+    });
+
+    const startInput = document.getElementById("start-date");
+    const endInput = document.getElementById("end-date");
+    const minDate = ymdToInput(dates[0]);
+    const maxDate = ymdToInput(dates[dates.length - 1]);
+    [startInput, endInput].forEach(input => {
+      input.min = minDate;
+      input.max = maxDate;
+    });
+    startInput.value = ymdToInput(range.current[0] || state.startDate || dates[0]);
+    endInput.value = ymdToInput(range.current[range.current.length - 1] || state.endDate || dates[dates.length - 1]);
+    startInput.onchange = () => {
+      state.period = "custom";
+      state.startDate = inputToYmd(startInput.value);
+      state.endDate = inputToYmd(endInput.value || startInput.value);
+      render();
+    };
+    endInput.onchange = () => {
+      state.period = "custom";
+      state.startDate = inputToYmd(startInput.value || endInput.value);
+      state.endDate = inputToYmd(endInput.value);
+      render();
+    };
+
+    const metricSelect = document.getElementById("metric-select");
+    metricSelect.innerHTML = METRICS.map(m => (
+      '<option value="' + m.key + '"' + (m.key === state.metric ? " selected" : "") + ">" + m.name + "</option>"
+    )).join("");
+    metricSelect.onchange = () => {
+      state.metric = metricSelect.value;
+      render();
+    };
+
+    const comparisonSelect = document.getElementById("comparison-select");
+    comparisonSelect.innerHTML = COMPARISONS.map(c => (
+      '<option value="' + c.key + '"' + (c.key === state.comparison ? " selected" : "") + ">" + c.label + "</option>"
+    )).join("");
+    comparisonSelect.onchange = () => {
+      state.comparison = comparisonSelect.value;
+      render();
+    };
+
+    const search = document.getElementById("search");
+    search.value = state.search;
+    search.oninput = () => {
+      state.search = search.value.trim();
+      render();
+    };
+
+    const yToggle = document.getElementById("unified-y");
+    yToggle.checked = !!state.unifiedY[state.mode];
+    yToggle.onchange = () => {
+      state.unifiedY[state.mode] = yToggle.checked;
+      render();
+    };
+
+    const fieldToggle = document.getElementById("field-toggle");
+    fieldToggle.onclick = () => {
+      state.showFieldPanel = !state.showFieldPanel;
+      renderControls();
+    };
+    const filterToggle = document.getElementById("filter-toggle");
+    const activeCount = activeFilterCount();
+    filterToggle.textContent = "筛选" + (activeCount ? " · " + activeCount + " 组生效" : "") + (state.showFilterPanel ? " ▴" : " ▾");
+    filterToggle.onclick = () => {
+      state.showFilterPanel = !state.showFilterPanel;
+      renderControls();
+    };
+    renderFilterPanel();
+    renderFieldPanel();
+    renderDefinitionPanel();
+  }
+  function activeFilterCount() {
+    return FILTERS.reduce((n, filter) => {
+      const selected = state.filters[filter.key] || [];
+      const options = state.filterOptions[filter.key] || [];
+      return n + (options.length && selected.length < options.length ? 1 : 0);
+    }, 0);
+  }
+  function renderFilterPanel() {
+    const panel = document.getElementById("filter-panel");
+    panel.classList.toggle("hidden", !state.showFilterPanel);
+    panel.innerHTML = FILTERS.map(filter => {
+      const options = state.filterOptions[filter.key] || [];
+      const selected = new Set(state.filters[filter.key] || []);
+      return '<div class="filter-row">' +
+        '<div class="control-label">' + escapeHtml(filter.label) + '</div>' +
+        '<div class="filter-options">' + options.map(value =>
+          '<button class="chip-btn' + (selected.has(value) ? " active" : "") + '" data-filter="' + filter.key + '" data-value="' + escapeHtml(value) + '" type="button">' + escapeHtml(value) + '</button>'
+        ).join("") + '</div>' +
+        '<div><button class="chip-action" data-filter-all="' + filter.key + '" data-enabled="1" type="button">全选</button><button class="chip-action" data-filter-all="' + filter.key + '" data-enabled="0" type="button">全不选</button></div>' +
+      '</div>';
+    }).join("");
+    document.querySelectorAll("[data-filter]").forEach(btn => {
+      btn.onclick = () => toggleFilterValue(btn.dataset.filter, btn.dataset.value);
+    });
+    document.querySelectorAll("[data-filter-all]").forEach(btn => {
+      btn.onclick = () => setFilterAll(btn.dataset.filterAll, btn.dataset.enabled === "1");
+    });
+  }
+  function renderFieldPanel() {
+    const panel = document.getElementById("field-panel");
+    panel.classList.toggle("hidden", !state.showFieldPanel);
+    panel.innerHTML = CARD_FIELD_GROUPS.map(group =>
+      '<div class="field-row">' +
+        '<div class="control-label">' + escapeHtml(group.label) + '</div>' +
+        '<div class="field-options">' + group.fields.map(field => {
+          const checked = hasCardField(group.key, field.key);
+          return '<label class="toggle-label"><input type="checkbox" data-field-group="' + group.key + '" data-field-key="' + field.key + '"' + (checked ? " checked" : "") + (field.locked ? " disabled" : "") + '> ' + escapeHtml(field.label) + '</label>';
+        }).join("") + '</div>' +
+        '<div></div>' +
+      '</div>'
+    ).join("") + '<div class="field-actions"><button class="ghost-btn" id="field-reset" type="button">恢复默认</button></div>';
+    panel.querySelectorAll("[data-field-key]").forEach(input => {
+      input.onchange = () => toggleCardField(input.dataset.fieldGroup, input.dataset.fieldKey);
+    });
+    const reset = document.getElementById("field-reset");
+    if (reset) reset.onclick = resetCardFields;
+  }
+  function renderDefinitionPanel() {
+    const toggle = document.getElementById("definition-toggle");
+    const body = document.getElementById("definition-body");
+    document.getElementById("definition-arrow").textContent = state.definitionOpen ? "收起 ↑" : "展开 ↓";
+    body.classList.toggle("hidden", !state.definitionOpen);
+    body.innerHTML = metricDefinitionTable();
+    toggle.onclick = () => {
+      state.definitionOpen = !state.definitionOpen;
+      renderDefinitionPanel();
+    };
+  }
+  function metricDefinitionTable() {
+    const rows = [
+      ["运行次数", "区间内每日值求和", "(当期和 − 上一同长度周期和) / |上一周期和|", "(当期和 − 去年同期和) / |去年同期和|"],
+      ["运行时长", "区间内每日值求和（秒）", "同上", "同上"],
+      ["活跃应用数", "区间内每日值取平均", "(当期均值 − 上期均值) / |上期均值|", "同理"],
+      ["新建应用数", "区间内每日值求和", "同运行次数", "同理"],
+      ["高级账号活跃", "区间内每日值取平均", "同活跃应用数", "同理"],
+      ["账号饱和度", "区间内每日值取平均", "同活跃应用数", "同理"],
+      ["健康度", "区间内每日值取平均", "同活跃应用数", "同理"],
+      ["高级账号使用率", "区间最后一天的已开通/已购额度", "(当期末态比值 − 上期末态比值) / |上期末态比值|", "(当期末态比值 − 去年同期末态比值) / |去年同期末态比值|"],
+      ["有效运行占比", "区间内 useDayRunDura 之和 / dayRunDura 之和", "(当期比值 − 上期比值) / |上期比值|", "同理"]
+    ];
+    return '<table><thead><tr><th>指标</th><th>聚合方式</th><th>环比公式</th><th>同比公式</th></tr></thead><tbody>' +
+      rows.map(r => '<tr>' + r.map(cell => '<td>' + escapeHtml(cell) + '</td>').join("") + '</tr>').join("") +
+      '</tbody></table>';
+  }
+  function renderSummary(clients) {
+    if (state.mode === "metrics") {
+      const metric = metricDef(state.metric);
+      const zero = clients.filter(c => c.selected.current === 0).length;
+      const compared = clients.filter(c => c.selected.change != null).length;
+      const avg = clients.length ? clients.reduce((s, c) => s + c.selected.current, 0) / clients.length : 0;
+      document.getElementById("summary").innerHTML = [
+        summaryCard("客户数", clients.length, "仅展示有日报趋势客户"),
+        summaryCard("当前指标", metric.name, "按当前值从低到高排序"),
+        summaryCard("零值客户", zero, "当前时间段该指标为 0"),
+        summaryCard("平均值", metric.format(avg) + (metric.unit ? " " + metric.unit : ""), "当前筛选客户均值"),
+        summaryCard("可对比客户", compared, periodRange().compareLabel)
+      ].join("");
+      return;
+    }
+
+    const counts = {};
+    QUEUES.forEach(q => counts[q.key] = 0);
+    clients.forEach(c => counts[c.diagnosis.queue] = (counts[c.diagnosis.queue] || 0) + 1);
+    const priority = topPriority(clients).length;
+    document.getElementById("summary").innerHTML = [
+      summaryCard("今日优先跟进", priority, "按风险、价值、跟进超期综合排序"),
+      summaryCard("续费抢救", counts.rescue || 0, "临期且使用下滑/停用"),
+      summaryCard("使用骤降", counts.drop || 0, "核心指标明显下滑"),
+      summaryCard("个人版转化", counts.personal || 0, "个人版使用信号明显"),
+      summaryCard("稳定运营", counts.stable || 0, "未命中风险或机会规则")
+    ].join("");
+  }
+  function summaryCard(label, value, note) {
+    return '<div class="summary-card"><div class="summary-label">' + escapeHtml(label) + '</div><div class="summary-value">' + value + '</div><div class="summary-note">' + escapeHtml(note) + '</div></div>';
+  }
+  function renderMain(clients) {
+    disposeCharts();
+    if (state.mode === "metrics") {
+      renderMetricsMain(clients);
+    } else {
+      renderDiagnosisMain(clients);
+    }
+  }
+  function renderMetricsMain(clients) {
+    const metric = metricDef(state.metric);
+    const sorted = clients.slice().sort((a, b) => a.selected.current - b.selected.current || a.name.localeCompare(b.name, "zh-CN"));
+    document.getElementById("main").innerHTML =
+      '<section class="section">' +
+        '<div class="section-header"><h2 class="section-title">' + escapeHtml(metric.name) + ' · 从低到高 · ' + sorted.length + ' 客户</h2></div>' +
+        '<div class="client-grid">' + sorted.map(c => clientCard(c, metric, "metric", "metrics")).join("") + '</div>' +
+      '</section>';
+    bindClientCards();
+    requestAnimationFrame(() => sorted.forEach(c => renderClientChart(c, metric, "metric")));
+  }
+  function topPriority(clients) {
+    return clients.filter(c => !["stable", "expired", "data-check"].includes(c.diagnosis.queue)).sort((a, b) => b.diagnosis.priority - a.diagnosis.priority).slice(0, 10);
+  }
+  function renderDiagnosisMain(clients) {
+    const tabs = '<section class="subtabs">' + DIAGNOSIS_VIEWS.map(v =>
+      '<button class="subtab-btn' + (v.key === state.diagnosisView ? " active" : "") + '" data-view="' + v.key + '">' + v.label + '</button>'
+    ).join("") + '</section>';
+    const top = topPriority(clients);
+    const topHtml = '<section class="section"><div class="section-header"><h2 class="section-title">今日优先跟进 Top 10</h2><div class="section-desc">综合风险、客户价值、续费窗口和跟进超期</div></div>' +
+      '<div class="client-grid">' + (top.length ? top.map((c, i) => clientCard(c, metricDef("dayRunCnt"), "priority", "diagnosis", { rank: i + 1, showPriority: true })).join("") : '<div class="empty">当前没有优先跟进客户</div>') + '</div></section>';
+    document.getElementById("main").innerHTML = tabs + topHtml + (state.diagnosisView === "renewal" ? renewalView(clients) : queueView(clients));
+    document.querySelectorAll(".subtab-btn").forEach(btn => {
+      btn.onclick = () => {
+        state.diagnosisView = btn.dataset.view;
+        render();
+      };
+    });
+    bindClientCards();
+    requestAnimationFrame(() => {
+      top.forEach(c => renderClientChart(c, metricDef("dayRunCnt"), "priority"));
+      clients.forEach(c => {
+        renderClientChart(c, metricDef("dayRunCnt"), "diag-" + c.diagnosis.queue);
+        renderClientChart(c, metricDef("dayRunCnt"), "renewal-" + renewalQuarter(c.profile));
+      });
+    });
+  }
+  function bindClientCards() {
+    document.querySelectorAll(".client-card[data-client]").forEach(card => {
+      card.onclick = event => {
+        if (event.target && event.target.closest("a,button,input,label")) return;
+        openDrawer(card.dataset.client);
+      };
+    });
+  }
+  function queueView(clients) {
+    return QUEUES.map(queue => {
+      const items = clients.filter(c => c.diagnosis.queue === queue.key).sort((a, b) => b.diagnosis.priority - a.diagnosis.priority);
+      if (!items.length) return "";
+      return '<section class="section">' +
+        '<div class="group-header"><h2 class="group-title">' + queue.title + ' · ' + items.length + '</h2><div class="group-desc">' + queue.desc + '</div></div>' +
+        '<div class="client-grid">' + items.map(c => clientCard(c, metricDef("dayRunCnt"), "diag-" + queue.key, "diagnosis")).join("") + '</div>' +
+      '</section>';
+    }).join("") || '<div class="empty">当前筛选条件下没有诊断队列</div>';
+  }
+  function renewalView(clients) {
+    const order = ["Q1", "Q2", "Q3", "Q4", "不在续费期"];
+    return order.map(q => {
+      const items = clients.filter(c => renewalQuarter(c.profile) === q).sort((a, b) => (a.daysRemaining ?? 99999) - (b.daysRemaining ?? 99999));
+      if (!items.length) return "";
+      return '<section class="section">' +
+        '<div class="group-header"><h2 class="group-title">' + q + ' 续费 · ' + items.length + '</h2><div class="group-desc">按到期天数从近到远</div></div>' +
+        '<div class="client-grid">' + items.map(c => clientCard(c, metricDef("dayRunCnt"), "renewal-" + q, "diagnosis")).join("") + '</div>' +
+      '</section>';
+    }).join("") || '<div class="empty">当前筛选条件下没有续费季度数据</div>';
+  }
+  function compactTags(client, mode) {
+    const p = client.profile;
+    const tags = [];
+    if (hasCardField("tags", "customerTier")) tags.push(tag(p.customerTier || "未分层"));
+    if (hasCardField("tags", "csOwner")) tags.push(tag("CS " + (p.csOwner || "未填写")));
+    if (hasCardField("tags", "serviceStage")) tags.push(tag(p.serviceStage || "未填写"));
+    if (hasCardField("tags", "daysRemaining")) tags.push(tag("到期 " + daysText(client.daysRemaining), client.daysRemaining != null && client.daysRemaining <= 60 ? "warn" : ""));
+    if (hasCardField("tags", "lastFollowUp")) tags.push(followTag(client));
+    if (hasCardField("tags", "renewalQuarter")) tags.push(tag(renewalQuarter(p)));
+    if (mode === "diagnosis" && hasCardField("tags", "contractAmount") && client.expiration && client.expiration.totalAmount) tags.push(tag("合同 " + formatNumber(client.expiration.totalAmount)));
+    if (mode === "diagnosis" && hasCardField("tags", "estimatedRenewalType") && p.estimatedRenewalType) tags.push(estimateTag(p.estimatedRenewalType));
+    return tags;
+  }
+  function cardStats(client, metric, mode) {
+    const selected = client.selected;
+    const stats = [];
+    const compareLabel = mode === "diagnosis" ? "环比" : state.comparison === "yoy" ? "同比" : state.comparison === "period" ? "环比" : "对比";
+    if (hasCardField("stats", "currentMetric")) stats.push(stat(metric.name, metric.format(selected.current), metric.unit));
+    if (hasCardField("stats", "compareChange")) stats.push(stat(compareLabel, '<span class="' + changeClass(selected.change) + '">' + formatCompareValue(selected, mode) + '</span>', ""));
+    if (hasCardField("stats", "activeApp")) stats.push(stat("活跃应用", formatDecimal((client.values.dayActiveAppCnt || {}).current), "个"));
+    if (hasCardField("stats", "seniorAccountUseRate")) stats.push(stat("高级账号使用率", formatPercent((client.values.seniorAccountUseRate || {}).current), ""));
+    if (hasCardField("stats", "effectiveRunRate")) stats.push(stat("有效运行占比", formatPercent((client.values.effectiveRunRate || {}).current), ""));
+    if (hasCardField("stats", "healthIndicator")) stats.push(stat("健康度", formatScore((client.values.healthIndicator || {}).current), ""));
+    if (hasCardField("stats", "accountSaturation")) stats.push(stat("账号饱和度", formatPercent((client.values.accountSaturation || {}).current), ""));
+    return stats.join("");
+  }
+  function clientCard(client, metric, chartPrefix, mode, options) {
+    options = options || {};
+    const id = chartId(client.name, chartPrefix);
+    const isDiagnosis = mode === "diagnosis";
+    const statusClass = isDiagnosis ? client.diagnosis.queue : "stable";
+    const reasonHtml = isDiagnosis && hasCardField("text", "reason") ? '<div class="reason">' + escapeHtml(client.diagnosis.reason) + '</div>' : "";
+    const actionHtml = isDiagnosis && hasCardField("text", "action") ? '<div class="action">建议：' + escapeHtml(client.diagnosis.action) + '</div>' : "";
+    const pill = isDiagnosis
+      ? '<span class="status-pill ' + statusClass + '" title="' + escapeHtml(diagnosisExplain(client)) + '">' + escapeHtml(queueTitle(client.diagnosis.queue)) + '</span>'
+      : "";
+    const rankHtml = options.rank ? '<span class="client-rank">#' + options.rank + '</span>' : "";
+    const tags = [];
+    if (options.showPriority) tags.push(tag("优先级 " + Math.round(client.diagnosis.priority), "priority"));
+    compactTags(client, mode).forEach(t => tags.push(t));
+    return '<article class="client-card ' + statusClass + '" data-client="' + escapeHtml(client.name) + '">' +
+      '<div class="client-head">' +
+        '<div class="client-top"><div class="client-name-wrap">' + rankHtml + '<div class="client-name">' + escapeHtml(client.name) + '</div></div>' + pill + '</div>' +
+        '<div class="client-meta">' + tags.join("") + '</div>' +
+        '<div class="client-stats">' + cardStats(client, metric, mode) + '</div>' +
+        reasonHtml + actionHtml +
+      '</div>' +
+      (state.cardFields.chart ? '<div class="chart" id="' + id + '"></div>' : '') +
+    '</article>';
+  }
+  function diagnosisExplain(client) {
+    const d = client.diagnosis || {};
+    return (d.explainTitle || "") + (d.explainDetail ? "\n" + d.explainDetail : "");
+  }
+  function rowsByDate(client, dates) {
+    const dateSet = new Set(dates);
+    const rowsByDate = new Map();
+    client.rows.forEach(row => {
+      if (!dateSet.has(row.statisticDate)) return;
+      if (!rowsByDate.has(row.statisticDate)) rowsByDate.set(row.statisticDate, []);
+      rowsByDate.get(row.statisticDate).push(row);
+    });
+    return rowsByDate;
+  }
+  function seriesForDates(client, metric, dates, nullWhenMissing) {
+    const map = rowsByDate(client, dates);
+    return dates.map(d => {
+      const rows = map.get(d) || [];
+      if (nullWhenMissing && !rows.length) return null;
+      return aggregate(rows, metric.key, metric.aggregate);
+    });
+  }
+  function chartData(client, metric, comparisonOverride) {
+    const range = periodRange(comparisonOverride);
+    const comparison = comparisonOverride || state.comparison;
+    const currentValues = seriesForDates(client, metric, range.current, true);
+    if (!range.compare) {
+      return {
+        range,
+        comparison,
+        xAxis: range.current.map(fmtDate),
+        current: currentValues,
+        previous: [],
+        hasPreviousData: false,
+        previousDates: []
+      };
+    }
+    if (comparison === "period") {
+      const previousValues = seriesForDates(client, metric, range.previous, true);
+      return {
+        range,
+        comparison,
+        xAxis: range.previous.concat(range.current).map(fmtDate),
+        current: Array(range.previous.length).fill(null).concat(currentValues),
+        previous: previousValues.concat(Array(range.current.length).fill(null)),
+        hasPreviousData: previousValues.some(v => v != null),
+        previousDates: range.previous
+      };
+    }
+    const previousDates = range.current.map(d => ymdFromDate(addMonths(parseDate(d), -12)));
+    const previousValues = seriesForDates(client, metric, previousDates, true);
+    return {
+      range,
+      comparison,
+      xAxis: range.current.map(fmtDate),
+      current: currentValues,
+      previous: previousValues,
+      hasPreviousData: previousValues.some(v => v != null),
+      previousDates
+    };
+  }
+  function globalYAxisMax(metric, comparisonOverride) {
+    if (!state.unifiedY[state.mode]) return null;
+    let max = 0;
+    currentClients.forEach(client => {
+      const data = chartData(client, metric, comparisonOverride);
+      data.current.concat(data.previous || []).forEach(v => {
+        if (v != null && Number.isFinite(v)) max = Math.max(max, Number(v));
+      });
+    });
+    return max > 0 ? max * 1.1 : null;
+  }
+  function renderClientChart(client, metric, prefix, options) {
+    options = options || {};
+    const el = document.getElementById(chartId(client.name, prefix));
+    if (!el) return;
+    const store = options.store || chartInstances;
+    const comparisonOverride = ("comparison" in options)
+      ? options.comparison
+      : (prefix.startsWith("diag-") || prefix.startsWith("renewal-") ? "period" : null);
+    const chart = echarts.init(el, null, { renderer: "canvas" });
+    store.set(el.id, chart);
+    const data = chartData(client, metric, comparisonOverride);
+    el.classList.toggle("chart-empty", data.range.compare && !data.hasPreviousData);
+    const queue = client.diagnosis.queue;
+    const color = ["rescue", "expired", "data-check"].includes(queue) ? "#fb7185" : ["drop", "health", "followup", "new-onboarding", "big-swing"].includes(queue) ? "#fbbf24" : ["opportunity", "personal", "renewal-healthy"].includes(queue) ? "#34d399" : "#60a5fa";
+    const yMax = options.independentY ? null : globalYAxisMax(metric, comparisonOverride);
+    chart.setOption({
+      tooltip: {
+        trigger: "axis",
+        backgroundColor: "rgba(12, 20, 24, 0.96)",
+        borderColor: "rgba(148, 163, 184, 0.2)",
+        textStyle: { color: "#eef6f5", fontSize: 12 },
+        formatter: params => {
+          const current = params.find(p => p.seriesName === "当期");
+          const previous = params.find(p => p.seriesName === (data.comparison === "yoy" ? "去年同期" : "对比期"));
+          const idx = (current || previous || params[0]).dataIndex;
+          const currentRaw = current && current.value != null ? Number(current.value) : null;
+          const previousRaw = previous && previous.value != null ? Number(previous.value) : null;
+          const delta = previousRaw ? formatChange(change(currentRaw || 0, previousRaw)) : "无对比";
+          const lines = ["<b>" + escapeHtml(client.name) + "</b>"];
+          if (data.comparison === "period") {
+            const currentDate = idx >= data.previousDates.length ? data.range.current[idx - data.previousDates.length] : "";
+            const previousDate = idx < data.previousDates.length ? data.previousDates[idx] : "";
+            if (previousDate) lines.push("对比期 " + fmtDateFull(previousDate) + ": " + (previousRaw == null ? "无数据" : metric.format(previousRaw) + (metric.unit ? " " + metric.unit : "")));
+            if (currentDate) lines.push("当期 " + fmtDateFull(currentDate) + ": " + (currentRaw == null ? "无数据" : metric.format(currentRaw) + (metric.unit ? " " + metric.unit : "")));
+          } else {
+            const currentDate = data.range.current[idx] || "";
+            const previousDate = data.previousDates[idx] || "";
+            lines.push("当期 " + fmtDateFull(currentDate) + ": " + (currentRaw == null ? "无数据" : metric.format(currentRaw) + (metric.unit ? " " + metric.unit : "")));
+            if (data.range.compare) lines.push("去年 " + fmtDateFull(previousDate) + ": " + (previousRaw == null ? "无数据" : metric.format(previousRaw) + (metric.unit ? " " + metric.unit : "")));
+          }
+          if (data.range.compare) lines.push("变化率: " + delta);
+          return lines.join("<br>");
+        }
+      },
+      grid: { left: 46, right: 16, top: 22, bottom: 30 },
+      xAxis: {
+        type: "category",
+        data: data.xAxis,
+        boundaryGap: false,
+        axisLabel: { color: "#718589", fontSize: 10 },
+        axisTick: { show: false },
+        axisLine: { lineStyle: { color: "rgba(148,163,184,0.14)" } }
+      },
+      yAxis: {
+        type: "value",
+        axisLabel: { color: "#718589", fontSize: 10, formatter: v => metric.format(v) },
+        splitLine: { lineStyle: { color: "rgba(148,163,184,0.07)" } },
+        axisLine: { show: false },
+        max: yMax || undefined
+      },
+      series: [{
+        name: "当期",
+        type: "line",
+        data: data.current,
+        smooth: 0.28,
+        showSymbol: data.current.length <= 15,
+        symbolSize: 4,
+        lineStyle: { width: 2, color },
+        itemStyle: { color },
+        areaStyle: {
+          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: color + "33" },
+            { offset: 1, color: color + "03" }
+          ])
+        }
+      }].concat(data.range.compare ? [{
+        name: data.comparison === "yoy" ? "去年同期" : "对比期",
+        type: "line",
+        data: data.previous,
+        smooth: 0.28,
+        showSymbol: false,
+        connectNulls: false,
+        lineStyle: { width: 2, color: color + "66", type: "dashed" },
+        itemStyle: { color: color + "66" }
+      }] : []),
+      animationDuration: 450
+    }, true);
+  }
+  function openDrawer(clientName) {
+    const client = currentClients.find(c => c.name === clientName) || getClients(state.mode === "diagnosis" ? periodRange("period") : periodRange()).find(c => c.name === clientName);
+    if (!client) return;
+    state.drawerClientName = client.name;
+    state.drawerComparison = state.mode === "diagnosis" ? "period" : state.comparison;
+    renderDrawer(client);
+  }
+  function closeDrawer() {
+    state.drawerClientName = "";
+    disposeDrawerCharts();
+    const drawer = document.getElementById("drawer");
+    const backdrop = document.getElementById("drawer-backdrop");
+    drawer.classList.remove("open");
+    drawer.setAttribute("aria-hidden", "true");
+    backdrop.classList.remove("open");
+  }
+  function disposeDrawerCharts() {
+    drawerCharts.forEach(chart => chart.dispose());
+    drawerCharts.clear();
+  }
+  function renderDrawer(client, preserveScroll) {
+    const drawer = document.getElementById("drawer");
+    const backdrop = document.getElementById("drawer-backdrop");
+    const p = client.profile || {};
+    const uuid = p.organizationUuid || p.uuid || "";
+    const bossUrl = uuid ? "https://boss.shadow-rpa.net/simple/manage/microApp/boss/busi/enterpriseDetail?organizationUuid=" + encodeURIComponent(uuid) : "";
+    const values = drawerMetricValues(client);
+    const prevScroll = preserveScroll ? drawer.scrollTop : 0;
+    disposeDrawerCharts();
+    drawer.style.setProperty("--drawer-width", Math.round(state.drawerWidth) + "px");
+    drawer.innerHTML =
+      '<div class="drawer-resize" id="drawer-resize" title="拖拽调整宽度"></div>' +
+      '<div class="drawer-head">' +
+        '<div><h2 class="drawer-title">' + escapeHtml(client.name) + '</h2><div class="client-meta">' +
+          tag(p.customerTier || "未分层") +
+          tag("CS " + (p.csOwner || "未填写")) +
+          tag(p.serviceStage || "未填写") +
+          tag(p.cooperationStatus || "未填写") +
+          tag(p.deploymentType || "未填写") +
+          tag("到期 " + daysText(client.daysRemaining), client.daysRemaining != null && client.daysRemaining <= 60 ? "warn" : "") +
+          followTag(client) +
+        '</div></div>' +
+        '<button class="drawer-close" id="drawer-close" type="button" aria-label="关闭">×</button>' +
+      '</div>' +
+      '<div class="drawer-body">' +
+        '<section class="drawer-section">' +
+          '<div class="drawer-toolbar">' +
+            '<div class="drawer-toolbar-group"><span class="control-label">对比</span>' +
+              COMPARISONS.map(c => '<button class="metric-tab' + (c.key === state.drawerComparison ? " active" : "") + '" data-drawer-comparison="' + c.key + '" type="button">' + c.label + '</button>').join("") +
+            '</div>' +
+            '<div class="drawer-toolbar-group"><span class="control-label">布局</span>' +
+              [1, 2, 3].map(n => '<button class="metric-tab' + (n === state.drawerColumns ? " active" : "") + '" data-drawer-columns="' + n + '" type="button">' + n + ' 列</button>').join("") +
+            '</div>' +
+          '</div>' +
+          '<div class="drawer-charts" style="--drawer-cols:' + state.drawerColumns + '">' +
+            METRICS.map(m => {
+              const v = values[m.key] || { current: 0, change: null };
+              const delta = (v.change != null && Number.isFinite(v.change)) ? ' <span class="' + deltaClass(v.change) + '">' + formatChange(v.change) + '</span>' : '';
+              return '<div class="drawer-chart-card">' +
+                '<div class="drawer-chart-head"><span class="drawer-chart-name">' + escapeHtml(m.name) + '</span>' +
+                  '<span class="drawer-chart-agg">' + m.format(v.current) + (m.unit ? " " + escapeHtml(m.unit) : "") + delta + '</span>' +
+                '</div>' +
+                '<div class="drawer-chart" id="' + chartId(client.name, "drawer-" + m.key) + '"></div>' +
+              '</div>';
+            }).join("") +
+          '</div>' +
+        '</section>' +
+        '<section class="drawer-section"><h3>合同明细</h3>' + contractHtml(client) + '</section>' +
+        (bossUrl ? '<a class="boss-link" href="' + bossUrl + '" target="_blank" rel="noopener noreferrer">在 BOSS 系统中查看完整信息 →</a>' : '<div class="empty">缺少组织 UUID，无法生成 BOSS 跳转链接</div>') +
+      '</div>';
+    drawer.classList.add("open");
+    drawer.setAttribute("aria-hidden", "false");
+    backdrop.classList.add("open");
+    drawer.scrollTop = prevScroll;
+    document.getElementById("drawer-close").onclick = closeDrawer;
+    backdrop.onclick = closeDrawer;
+    drawer.querySelectorAll("[data-drawer-comparison]").forEach(btn => {
+      btn.onclick = () => {
+        state.drawerComparison = btn.dataset.drawerComparison;
+        renderDrawer(client, true);
+      };
+    });
+    drawer.querySelectorAll("[data-drawer-columns]").forEach(btn => {
+      btn.onclick = () => {
+        state.drawerColumns = parseInt(btn.dataset.drawerColumns, 10) || 1;
+        saveDrawerColumns();
+        renderDrawer(client, true);
+      };
+    });
+    bindDrawerResize();
+    requestAnimationFrame(() => renderDrawerCharts(client));
+  }
+  function drawerMetricValues(client) {
+    const range = periodRange(state.drawerComparison);
+    const curSet = new Set(range.current);
+    const prevSet = new Set(range.previous);
+    const currentRows = client.rows.filter(r => curSet.has(r.statisticDate));
+    const previousRows = client.rows.filter(r => prevSet.has(r.statisticDate));
+    const out = {};
+    METRICS.forEach(m => {
+      const current = aggregate(currentRows, m.key, m.aggregate);
+      const previous = aggregate(previousRows, m.key, m.aggregate);
+      out[m.key] = { current, previous, change: range.compare ? change(current, previous) : null };
+    });
+    return out;
+  }
+  function deltaClass(v) {
+    if (v == null || !Number.isFinite(v)) return "delta-flat";
+    if (v > 5) return "delta-up";
+    if (v < -5) return "delta-down";
+    return "delta-flat";
+  }
+  function renderDrawerCharts(client) {
+    METRICS.forEach(m => {
+      renderClientChart(client, m, "drawer-" + m.key, {
+        comparison: state.drawerComparison,
+        independentY: true,
+        store: drawerCharts
+      });
+    });
+  }
+  function resizeDrawerCharts() {
+    drawerCharts.forEach(chart => chart.resize());
+  }
+  function bindDrawerResize() {
+    const handle = document.getElementById("drawer-resize");
+    if (!handle) return;
+    if (window.matchMedia && window.matchMedia("(max-width: 760px)").matches) return;
+    const drawer = document.getElementById("drawer");
+    let raf = 0;
+    const onMove = e => {
+      const max = Math.round(window.innerWidth * 0.9);
+      let w = window.innerWidth - e.clientX;
+      w = Math.max(DRAWER_WIDTH_MIN, Math.min(max, w));
+      state.drawerWidth = w;
+      drawer.style.setProperty("--drawer-width", w + "px");
+      if (!raf) raf = requestAnimationFrame(() => { raf = 0; resizeDrawerCharts(); });
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      handle.classList.remove("active");
+      document.body.style.userSelect = "";
+      saveDrawerWidth();
+      resizeDrawerCharts();
+    };
+    handle.onmousedown = e => {
+      e.preventDefault();
+      handle.classList.add("active");
+      document.body.style.userSelect = "none";
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    };
+  }
+  function contractHtml(client) {
+    const expiration = client.expiration || {};
+    const contracts = Array.isArray(expiration.contracts) && expiration.contracts.length ? expiration.contracts : (expiration.latestContractNo ? [expiration] : []);
+    if (!contracts.length) return '<div class="empty">暂无合同摘要数据</div>';
+    return contracts.map(contract =>
+      '<article class="contract-card">' +
+        '<div class="contract-title">' + escapeHtml(contract.latestContractNo || "未填写合同编号") + '</div>' +
+        '<div class="contract-grid">' +
+          '<div>起止日期：' + escapeHtml((contract.startDate || "-") + " ~ " + (contract.endDate || "-")) + '</div>' +
+          '<div>剩余天数：' + daysText(contract.daysRemaining) + '</div>' +
+          '<div>合同金额：' + (contract.totalAmount ? formatNumber(contract.totalAmount) : "-") + '</div>' +
+          '<div>订单类型：' + escapeHtml((contract.orderTypes || []).join(" / ") || "-") + '</div>' +
+        '</div>' +
+        '<div class="contract-detail">' + escapeHtml((contract.orderDetails || []).join("\\n\\n") || "暂无订单明细") + '</div>' +
+      '</article>'
+    ).join("");
+  }
+  function disposeCharts() {
+    chartInstances.forEach(chart => chart.dispose());
+    chartInstances.clear();
+  }
+  function renderTable(clients) {
+    if (state.mode === "metrics") {
+      const metric = metricDef(state.metric);
+      const sorted = clients.slice().sort((a, b) => a.selected.current - b.selected.current || a.name.localeCompare(b.name, "zh-CN"));
+      document.getElementById("table-title").textContent = "指标观察明细";
+      document.getElementById("table-head").innerHTML = '<tr><th>客户</th><th>CS</th><th>阶段</th><th>到期天数</th><th>当前指标</th><th>对比</th><th>运行次数</th><th>运行时长</th><th>活跃应用</th><th>高级账号使用率</th><th>有效运行占比</th></tr>';
+      document.getElementById("table-body").innerHTML = sorted.map(c => '<tr>' +
+        '<td>' + escapeHtml(c.name) + '</td><td>' + escapeHtml(c.profile.csOwner || "未填写") + '</td><td>' + escapeHtml(c.profile.serviceStage || "未填写") + '</td><td>' + daysText(c.daysRemaining) + '</td>' +
+        '<td>' + metric.format(c.selected.current) + (metric.unit ? " " + metric.unit : "") + '</td><td class="' + changeClass(c.selected.change) + '">' + formatCompareValue(c.selected, "metrics") + '</td>' +
+        '<td>' + formatNumber((c.values.dayRunCnt || {}).current) + '</td><td>' + formatDuration((c.values.dayRunDura || {}).current) + ' 小时</td><td>' + formatDecimal((c.values.dayActiveAppCnt || {}).current) + '</td>' +
+        '<td>' + formatPercent((c.values.seniorAccountUseRate || {}).current) + '</td><td>' + formatPercent((c.values.effectiveRunRate || {}).current) + '</td></tr>').join("");
+      return;
+    }
+    const sorted = clients.slice().sort((a, b) => b.diagnosis.priority - a.diagnosis.priority);
+    document.getElementById("table-title").textContent = "CSM 诊断明细";
+    document.getElementById("table-head").innerHTML = '<tr><th>客户</th><th>行动队列</th><th>优先级</th><th>客户分层</th><th>CS</th><th>服务阶段</th><th>续费季度</th><th>到期天数</th><th>最近跟进</th><th>原因</th><th>建议动作</th></tr>';
+    document.getElementById("table-body").innerHTML = sorted.map(c => '<tr>' +
+      '<td>' + escapeHtml(c.name) + '</td><td>' + escapeHtml(queueTitle(c.diagnosis.queue)) + '</td><td>' + Math.round(c.diagnosis.priority) + '</td><td>' + escapeHtml(c.profile.customerTier || "未分层") + '</td>' +
+      '<td>' + escapeHtml(c.profile.csOwner || "未填写") + '</td><td>' + escapeHtml(c.profile.serviceStage || "未填写") + '</td><td>' + escapeHtml(renewalQuarter(c.profile)) + '</td><td>' + daysText(c.daysRemaining) + '</td>' +
+      '<td>' + (c.daysSinceFollowUp == null ? "未知" : c.daysSinceFollowUp + "天") + '</td><td>' + escapeHtml(c.diagnosis.reason) + '</td><td>' + escapeHtml(c.diagnosis.action) + '</td></tr>').join("");
+  }
+  function render() {
+    initDateState();
+    const range = state.mode === "diagnosis" ? periodRange("period") : periodRange();
+    const allClients = getClients(range);
+    initFilters(allClients);
+    renderControls();
+    const clients = allClients.filter(matchesFilters);
+    currentClients = clients;
+    renderSummary(clients);
+    renderMain(clients);
+    renderTable(clients);
+  }
+  function init() {
+    if (!reportData || !Array.isArray(reportData.rows)) {
+      document.body.innerHTML = '<div class="empty" style="margin:24px">数据尚未嵌入，请先运行 build_data.py</div>';
+      return;
+    }
+    renderMeta();
+    render();
+  }
+  window.addEventListener("resize", () => {
+    chartInstances.forEach(chart => chart.resize());
+    drawerCharts.forEach(chart => chart.resize());
+  });
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape") closeDrawer();
+  });
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
+})();
+</script>
+</body>
+</html>

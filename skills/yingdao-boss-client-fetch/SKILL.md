@@ -180,6 +180,49 @@ python3 skills/yingdao-boss-client-fetch/scripts/fetch_tenant_reports.py \
   --end-date "20260615"
 ```
 
+### Building the Customer Success Action Dashboard
+
+Use the static dashboard workflow when the user wants to inspect client-success risk, renewal follow-up priority, or per-client daily metric trends.
+
+Recommended one-command workflow:
+
+```bash
+python3 skills/yingdao-boss-client-fetch/dashboard/refresh_dashboard.py
+```
+
+`refresh_dashboard.py` checks whether each related JSON output is already from today (timezone default: `Asia/Shanghai`). If a file is fresh, it skips the corresponding data fetch/analyze step; if a file is missing or stale, it runs the needed step. It always rebuilds `dashboard.html` at the end.
+
+Equivalent full data refresh order:
+
+```bash
+python3 skills/yingdao-boss-client-fetch/scripts/fetch_clients.py
+python3 skills/yingdao-boss-client-fetch/scripts/fetch_contracts.py
+python3 skills/yingdao-boss-client-fetch/scripts/analyze_expiring_orders.py
+python3 skills/yingdao-boss-client-fetch/scripts/fetch_tenant_reports.py
+python3 skills/yingdao-boss-client-fetch/dashboard/build_data.py
+```
+
+The dashboard builder reads:
+
+- `runtime/yingdao-boss/latest-reports.json` (required): daily tenant report rows and metric trends
+- `runtime/yingdao-boss/latest-clients.json` (optional): CS owner, service stage, cooperation status, deployment type, renewal metadata
+- `runtime/yingdao-boss/contracts-expiration-summary.json` (optional): near-expiration contract buckets and contract details
+
+It writes the self-contained static dashboard:
+
+```text
+skills/yingdao-boss-client-fetch/dashboard/dashboard.html
+```
+
+Dashboard file responsibilities:
+
+- `dashboard/_template.html`: source template for layout, styles, risk grouping rules, table rendering, and per-client ECharts line charts
+- `dashboard/build_data.py`: build script that merges the JSON inputs and injects them into the template
+- `dashboard/dashboard.html`: generated artifact to open in a browser; do not hand-edit because it is overwritten by `build_data.py`
+- `dashboard/refresh_dashboard.py`: orchestration script that skips same-day JSON fetches and then rebuilds the dashboard
+
+If only daily report data is available, `build_data.py` still generates the dashboard and gracefully omits client profile / expiration enrichments.
+
 ## Output format
 
 The output uses a stable structure for downstream skills:
@@ -288,6 +331,10 @@ Downloaded xlsx files are saved to `output_dir` (default `/tmp`). The script als
 - `skills/yingdao-boss-client-fetch/scripts/analyze_expiring_orders.py`: analysis script for isolating clients with soon-to-expire subscriptions
 - `skills/yingdao-boss-client-fetch/scripts/fetch_apps.py`: end-to-end fetch script for client application lists & dashboard stats
 - `skills/yingdao-boss-client-fetch/scripts/fetch_tenant_reports.py`: end-to-end fetch script for client daily tenant reports
+- `skills/yingdao-boss-client-fetch/dashboard/build_data.py`: builds the self-contained customer-success dashboard from latest JSON outputs
+- `skills/yingdao-boss-client-fetch/dashboard/refresh_dashboard.py`: refreshes stale dashboard JSON inputs, skips same-day outputs, and rebuilds the dashboard
+- `skills/yingdao-boss-client-fetch/dashboard/_template.html`: source template for the generated dashboard
+- `skills/yingdao-boss-client-fetch/dashboard/dashboard.html`: generated static dashboard artifact
 - `skills/yingdao-boss-client-fetch/scripts/requirements.txt`: Python dependencies
 - `skills/yingdao-boss-client-fetch/config.template.json`: configuration template without secrets
 - `skills/yingdao-boss-client-fetch/references/api-notes.md`: request flow, enums, schema translation, and shared-data notes

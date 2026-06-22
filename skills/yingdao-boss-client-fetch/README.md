@@ -291,7 +291,126 @@ xlsx 默认保存到 `/tmp`（可通过 `--output-dir` 或 config 中 `export_da
 
 ---
 
-## 12. 与分析类 skill 的配合方式
+## 12. 客户成功行动看板（dashboard.html）
+
+该看板是一个本地静态 HTML，用于客户成功日常查看：
+
+- 哪些客户存在续费/流失风险
+- 哪些客户需要运营关注
+- 哪些客户使用趋势健康增长
+- 每个客户在指定指标上的独立趋势图
+
+它不同于 `export_dashboard.py`：`export_dashboard.py` 是从 Boss 异步下载 xlsx；本节的 `dashboard.html` 是基于本地 JSON 数据生成的客户成功行动看板。
+
+### 12.1 文件职责
+
+```text
+skills/yingdao-boss-client-fetch/dashboard/
+├── _template.html   # 看板源模板：页面结构、样式、分组规则、图表和表格逻辑
+├── build_data.py    # 构建脚本：读取 JSON 数据并注入模板
+├── refresh_dashboard.py # 编排脚本：今天已有 JSON 就跳过对应取数步骤
+└── dashboard.html   # 生成产物：可直接用浏览器打开的静态看板
+```
+
+职责说明：
+
+- `_template.html`：需要改页面布局、交互、风险分组规则、图表逻辑时改这里。
+- `build_data.py`：需要改读取哪些数据、如何合并数据、缺文件如何降级时改这里。
+- `refresh_dashboard.py`：日常入口；检查相关 JSON 是否已经是今天生成的，是则跳过对应取数/分析步骤，最后重新生成看板。
+- `dashboard.html`：最终打开查看的文件，通常不要手动修改；每次运行 `build_data.py` 都会覆盖它。
+
+### 12.2 推荐生成顺序
+
+日常推荐直接运行：
+
+```bash
+python3 skills/yingdao-boss-client-fetch/dashboard/refresh_dashboard.py
+```
+
+它会检查以下文件是否已经是今天生成的（默认按 `Asia/Shanghai` 判断）：
+
+- `runtime/yingdao-boss/latest-clients.json`
+- `runtime/yingdao-boss/latest-contracts.json`
+- `runtime/yingdao-boss/contracts-expiration-summary.json`
+- `runtime/yingdao-boss/latest-reports.json`
+
+如果某个文件已经是今天的，跳过对应步骤；如果不存在或不是今天的，才执行对应取数/分析脚本。无论是否跳过取数，最后都会重新生成 `dashboard.html`。
+
+可先预览会执行哪些步骤：
+
+```bash
+python3 skills/yingdao-boss-client-fetch/dashboard/refresh_dashboard.py --dry-run
+```
+
+如需强制重新拉取全部数据：
+
+```bash
+python3 skills/yingdao-boss-client-fetch/dashboard/refresh_dashboard.py --force
+```
+
+等价的完整手动刷新顺序如下：
+
+```bash
+# 1. 刷新客户主数据，生成 runtime/yingdao-boss/latest-clients.json
+python3 skills/yingdao-boss-client-fetch/scripts/fetch_clients.py
+
+# 2. 刷新合同数据，生成 runtime/yingdao-boss/latest-contracts.json
+python3 skills/yingdao-boss-client-fetch/scripts/fetch_contracts.py
+
+# 3. 分析合同到期情况，生成 runtime/yingdao-boss/contracts-expiration-summary.json
+python3 skills/yingdao-boss-client-fetch/scripts/analyze_expiring_orders.py
+
+# 4. 刷新日报数据，生成 runtime/yingdao-boss/latest-reports.json
+python3 skills/yingdao-boss-client-fetch/scripts/fetch_tenant_reports.py
+
+# 5. 生成静态客户成功行动看板
+python3 skills/yingdao-boss-client-fetch/dashboard/build_data.py
+```
+
+生成后打开：
+
+```text
+skills/yingdao-boss-client-fetch/dashboard/dashboard.html
+```
+
+### 12.3 构建脚本读取的数据
+
+`build_data.py` 默认读取：
+
+- `runtime/yingdao-boss/latest-reports.json`：必需，客户每日指标趋势。
+- `runtime/yingdao-boss/latest-clients.json`：可选，补充客户成功负责人、服务阶段、合作状态、部署类型、续费字段。
+- `runtime/yingdao-boss/contracts-expiration-summary.json`：可选，补充临期/已过期合同信息。
+
+如果可选文件不存在，脚本会提示 warning，但仍会生成只包含日报趋势的看板。
+
+### 12.4 自定义输入或输出
+
+```bash
+python3 skills/yingdao-boss-client-fetch/dashboard/build_data.py \
+  --input ./runtime/yingdao-boss/latest-reports.json \
+  --clients-input ./runtime/yingdao-boss/latest-clients.json \
+  --expiration-input ./runtime/yingdao-boss/contracts-expiration-summary.json \
+  --output ./skills/yingdao-boss-client-fetch/dashboard/dashboard.html
+```
+
+### 12.5 看板默认逻辑
+
+- 默认指标：运行次数 `dayRunCnt`
+- 默认对比：近一个月 vs 前一个月
+- 可切换：近7天、近一个月、近三个月、近半年、近一年
+- 支持自定义起止日期筛选，起止日期均包含在筛选范围内
+- 客户分组：
+  - 高风险续费/流失
+  - 需关注
+  - 健康增长
+  - 低使用/待激活
+  - 全部客户
+
+分组会综合日报趋势、客户主数据和合同到期摘要；当客户主数据或到期摘要缺失时，仅基于日报趋势降级判断。
+
+---
+
+## 13. 与分析类 skill 的配合方式
 
 本技能推荐作为 **数据生产者 skill** 使用。
 
@@ -316,7 +435,7 @@ xlsx 默认保存到 `/tmp`（可通过 `--output-dir` 或 config 中 `export_da
 
 ---
 
-## 16. 总结
+## 14. 总结
 
 `yingdao-boss-client-fetch` 的定位不是“分析 skill”，而是一个稳定的 **Boss 客户数据抓取 skill**。
 
