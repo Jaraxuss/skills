@@ -182,7 +182,7 @@ python3 skills/yingdao-boss-client-fetch/scripts/fetch_tenant_reports.py \
 
 ### Building the Customer Success Action Dashboard
 
-Use the static dashboard workflow when the user wants to inspect client-success risk, renewal follow-up priority, or per-client daily metric trends.
+Use the static dashboard workflow when the user wants to inspect client-success risk, renewal follow-up priority, per-client daily metric trends, or the generated customer-success workbench.
 
 Recommended one-command workflow:
 
@@ -216,12 +216,30 @@ skills/yingdao-boss-client-fetch/dashboard/dashboard.html
 
 Dashboard file responsibilities:
 
-- `dashboard/_template.html`: source template for layout, styles, risk grouping rules, table rendering, and per-client ECharts line charts
+- `dashboard/_template.html`: source template for layout, styles, CSM diagnosis rules, filters, drawer interactions, table rendering, and per-client ECharts line charts
 - `dashboard/build_data.py`: build script that merges the JSON inputs and injects them into the template
 - `dashboard/dashboard.html`: generated artifact to open in a browser; do not hand-edit because it is overwritten by `build_data.py`
 - `dashboard/refresh_dashboard.py`: orchestration script that skips same-day JSON fetches and then rebuilds the dashboard
 
 If only daily report data is available, `build_data.py` still generates the dashboard and gracefully omits client profile / expiration enrichments.
+
+Current dashboard behavior:
+
+- Two top-level modes:
+  - `指标观察`: default objective metric view, sorted from low to high by the selected metric.
+  - `CSM 诊断`: action workbench with Top 10 priority follow-up, action queues, and renewal quarter view.
+- Default metric: `dayRunCnt` / 运行次数.
+- Supported comparison modes: period-over-period, year-over-year, and no comparison.
+- Metric charts can overlay the comparison period as a dashed line.
+- Structured filters cover service stage, customer tier, renewal quarter, and CS owner.
+- Service stage filtering defaults to hiding lost/expired customers.
+- `CSM 诊断` Top 10 excludes expired recovery and data-check queues.
+- Customer cards open a drawer with all 9 metric trend charts, contract summary, and BOSS detail link.
+- The drawer has independent comparison controls, independent Y-axis scaling, configurable chart columns, and persisted width.
+- Browser-local settings use `localStorage` keys:
+  - `dashboard_card_fields`
+  - `dashboard_drawer_width`
+  - `dashboard_drawer_chart_columns`
 
 ## Output format
 
