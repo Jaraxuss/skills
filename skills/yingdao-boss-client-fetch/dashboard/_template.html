@@ -920,9 +920,9 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
   function periodRange(comparisonOverride) {
     const dates = allDates();
     const p = PERIODS.find(x => x.key === state.period) || PERIODS[1];
-    if (!dates.length) return { current: [], previous: [], compare: [], compareLabel: "无对比" };
+    if (!dates.length) return { current: [], previous: [], compare: false, compareLabel: "无对比" };
     initDateState();
-    const comparison = comparisonOverride || state.comparison;
+    const comparison = comparisonMode(comparisonOverride);
 
     let end = parseDate(dates[dates.length - 1]);
     let curStart = new Date(end);
@@ -971,6 +971,16 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
       previousLabel: compareStartYmd ? fmtDateFull(compareStartYmd) + " ~ " + fmtDateFull(compareEndYmd) : "",
       compareLabel
     };
+  }
+  function comparisonMode(comparisonOverride) {
+    return comparisonOverride == null ? state.comparison : comparisonOverride;
+  }
+  function comparisonDates(range, comparison) {
+    if (!range.compare) return [];
+    if (comparison === "yoy") {
+      return range.current.map(d => ymdFromDate(addMonths(parseDate(d), -12)));
+    }
+    return range.previous;
   }
   function aggregate(rows, key, method) {
     if (!rows.length) return 0;
@@ -1632,8 +1642,8 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
     });
   }
   function chartData(client, metric, comparisonOverride) {
-    const range = periodRange(comparisonOverride);
-    const comparison = comparisonOverride || state.comparison;
+    const comparison = comparisonMode(comparisonOverride);
+    const range = periodRange(comparison);
     const currentValues = seriesForDates(client, metric, range.current, true);
     if (!range.compare) {
       return {
@@ -1646,19 +1656,19 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
         previousDates: []
       };
     }
+    const previousDates = comparisonDates(range, comparison);
     if (comparison === "period") {
-      const previousValues = seriesForDates(client, metric, range.previous, true);
+      const previousValues = seriesForDates(client, metric, previousDates, true);
       return {
         range,
         comparison,
-        xAxis: range.previous.concat(range.current).map(fmtDate),
-        current: Array(range.previous.length).fill(null).concat(currentValues),
+        xAxis: previousDates.concat(range.current).map(fmtDate),
+        current: Array(previousDates.length).fill(null).concat(currentValues),
         previous: previousValues.concat(Array(range.current.length).fill(null)),
         hasPreviousData: previousValues.some(v => v != null),
-        previousDates: range.previous
+        previousDates
       };
     }
-    const previousDates = range.current.map(d => ymdFromDate(addMonths(parseDate(d), -12)));
     const previousValues = seriesForDates(client, metric, previousDates, true);
     return {
       range,
@@ -1769,9 +1779,20 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
       animationDuration: 450
     }, true);
   }
+  function hideChartTooltips(store) {
+    store.forEach(chart => {
+      try {
+        chart.dispatchAction({ type: "hideTip" });
+      } catch (err) {
+        // Ignore charts that are already tearing down.
+      }
+    });
+  }
   function openDrawer(clientName) {
     const client = currentClients.find(c => c.name === clientName) || getClients(state.mode === "diagnosis" ? periodRange("period") : periodRange()).find(c => c.name === clientName);
     if (!client) return;
+    hideChartTooltips(chartInstances);
+    hideChartTooltips(drawerCharts);
     state.drawerClientName = client.name;
     state.drawerComparison = state.mode === "diagnosis" ? "period" : state.comparison;
     renderDrawer(client);
@@ -1786,6 +1807,7 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
     backdrop.classList.remove("open");
   }
   function disposeDrawerCharts() {
+    hideChartTooltips(drawerCharts);
     drawerCharts.forEach(chart => chart.dispose());
     drawerCharts.clear();
   }
@@ -1847,6 +1869,8 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
     backdrop.onclick = closeDrawer;
     drawer.querySelectorAll("[data-drawer-comparison]").forEach(btn => {
       btn.onclick = () => {
+        hideChartTooltips(chartInstances);
+        hideChartTooltips(drawerCharts);
         state.drawerComparison = btn.dataset.drawerComparison;
         renderDrawer(client, true);
       };
@@ -1864,7 +1888,7 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
   function drawerMetricValues(client) {
     const range = periodRange(state.drawerComparison);
     const curSet = new Set(range.current);
-    const prevSet = new Set(range.previous);
+    const prevSet = new Set(comparisonDates(range, state.drawerComparison));
     const currentRows = client.rows.filter(r => curSet.has(r.statisticDate));
     const previousRows = client.rows.filter(r => prevSet.has(r.statisticDate));
     const out = {};
