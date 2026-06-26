@@ -194,6 +194,15 @@
       box-shadow: var(--shadow);
     }
     .summary-card { padding: 14px 16px; }
+    button.summary-card {
+      width: 100%;
+      color: inherit;
+      text-align: left;
+      cursor: pointer;
+      font: inherit;
+    }
+    button.summary-card:hover, button.summary-card.active { border-color: rgba(34, 211, 238, 0.42); }
+    button.summary-card.active { background: rgba(8, 145, 178, 0.14); }
     .summary-label { color: var(--text-muted); font-size: 0.76rem; font-weight: 700; }
     .summary-value { margin-top: 8px; font-size: 1.72rem; font-weight: 800; }
     .summary-note { margin-top: 4px; color: var(--text-muted); font-size: 0.75rem; }
@@ -553,9 +562,9 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
     { key: "metrics", label: "指标观察" },
     { key: "diagnosis", label: "CSM 诊断" }
   ];
-  const DIAGNOSIS_VIEWS = [
-    { key: "queue", label: "行动队列" },
-    { key: "renewal", label: "续费季度" }
+  const METRICS_VIEWS = [
+    { key: "renewal", label: "续费季度" },
+    { key: "metric", label: "指标排序" }
   ];
   const COMPARISONS = [
     { key: "period", label: "环比" },
@@ -645,28 +654,35 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
     }
   ];
   const CARD_FIELD_STORAGE_KEY = "dashboard_card_fields";
+  const VIEW_STATE_STORAGE_KEY = "dashboard_view_state_v1";
   const DRAWER_WIDTH_STORAGE_KEY = "dashboard_drawer_width";
   const DRAWER_COLUMNS_STORAGE_KEY = "dashboard_drawer_chart_columns";
   const DRAWER_WIDTH_DEFAULT = 840;
   const DRAWER_WIDTH_MIN = 560;
+  const savedViewState = readViewState();
 
   const state = {
     mode: "metrics",
-    diagnosisView: "queue",
-    period: "1m",
-    metric: "dayRunCnt",
-    comparison: "period",
+    period: savedViewState.period || "1m",
+    metric: savedViewState.metric || "dayRunCnt",
+    comparison: savedViewState.comparison || "period",
     search: "",
-    startDate: "",
-    endDate: "",
-    filters: {},
+    startDate: savedViewState.startDate || "",
+    endDate: savedViewState.endDate || "",
+    filters: savedViewState.filters || {},
     filterOptions: {},
+    metricsView: savedViewState.metricsView || "renewal",
+    metricSortDir: savedViewState.metricSortDir || "asc",
+    diagnosisFocus: "",
     cardFields: readCardFields(),
     showFieldPanel: false,
     showFilterPanel: false,
     definitionOpen: false,
     unifiedY: { metrics: true, diagnosis: false },
     drawerClientName: "",
+    drawerPeriod: savedViewState.period || "1m",
+    drawerStartDate: savedViewState.startDate || "",
+    drawerEndDate: savedViewState.endDate || "",
     drawerComparison: "period",
     drawerColumns: readDrawerColumns(),
     drawerWidth: readDrawerWidth()
@@ -689,6 +705,44 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
   function firstText(value) {
     if (Array.isArray(value)) return value[0] || "";
     return value == null ? "" : String(value);
+  }
+  function readViewState() {
+    let parsed = {};
+    try {
+      parsed = JSON.parse(localStorage.getItem(VIEW_STATE_STORAGE_KEY) || "{}") || {};
+    } catch (err) {
+      parsed = {};
+    }
+    const periods = new Set(PERIODS.map(p => p.key));
+    const metrics = new Set(METRICS.map(m => m.key));
+    const comparisons = new Set(COMPARISONS.map(c => c.key));
+    const views = new Set(METRICS_VIEWS.map(v => v.key));
+    return {
+      period: periods.has(parsed.period) ? parsed.period : "",
+      metric: metrics.has(parsed.metric) ? parsed.metric : "",
+      comparison: comparisons.has(parsed.comparison) ? parsed.comparison : "",
+      startDate: /^\d{8}$/.test(String(parsed.startDate || "")) ? parsed.startDate : "",
+      endDate: /^\d{8}$/.test(String(parsed.endDate || "")) ? parsed.endDate : "",
+      filters: parsed.filters && typeof parsed.filters === "object" ? parsed.filters : {},
+      metricsView: views.has(parsed.metricsView) ? parsed.metricsView : "",
+      metricSortDir: parsed.metricSortDir === "desc" ? "desc" : "asc"
+    };
+  }
+  function saveViewState() {
+    try {
+      localStorage.setItem(VIEW_STATE_STORAGE_KEY, JSON.stringify({
+        period: state.period,
+        startDate: state.startDate,
+        endDate: state.endDate,
+        metric: state.metric,
+        comparison: state.comparison,
+        filters: state.filters,
+        metricsView: state.metricsView,
+        metricSortDir: state.metricSortDir
+      }));
+    } catch (err) {
+      // localStorage may be unavailable when opened from restricted contexts.
+    }
   }
   function readCardFields() {
     let parsed = {};
@@ -808,10 +862,12 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
     if (selected.has(value)) selected.delete(value);
     else selected.add(value);
     state.filters[key] = Array.from(selected);
+    saveViewState();
     render();
   }
   function setFilterAll(key, enabled) {
     state.filters[key] = enabled ? (state.filterOptions[key] || []).slice() : [];
+    saveViewState();
     render();
   }
   function matchesFilters(client) {
@@ -917,17 +973,18 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
     if (start > end) start = end;
     return { start, end };
   }
-  function periodRange(comparisonOverride) {
+  function periodRange(comparisonOverride, rangeState) {
     const dates = allDates();
-    const p = PERIODS.find(x => x.key === state.period) || PERIODS[1];
+    const source = rangeState || state;
+    const p = PERIODS.find(x => x.key === source.period) || PERIODS[1];
     if (!dates.length) return { current: [], previous: [], compare: false, compareLabel: "无对比" };
-    initDateState();
+    if (!rangeState) initDateState();
     const comparison = comparisonMode(comparisonOverride);
 
     let end = parseDate(dates[dates.length - 1]);
     let curStart = new Date(end);
     if (p.custom) {
-      const clamped = clampRangeToData(state.startDate, state.endDate, dates);
+      const clamped = clampRangeToData(source.startDate, source.endDate, dates);
       curStart = parseDate(clamped.start);
       end = parseDate(clamped.end);
     } else if (p.days) {
@@ -1315,6 +1372,7 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
     periods.querySelectorAll("button").forEach(btn => {
       btn.onclick = () => {
         state.period = btn.dataset.period;
+        saveViewState();
         render();
       };
     });
@@ -1333,12 +1391,14 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
       state.period = "custom";
       state.startDate = inputToYmd(startInput.value);
       state.endDate = inputToYmd(endInput.value || startInput.value);
+      saveViewState();
       render();
     };
     endInput.onchange = () => {
       state.period = "custom";
       state.startDate = inputToYmd(startInput.value || endInput.value);
       state.endDate = inputToYmd(endInput.value);
+      saveViewState();
       render();
     };
 
@@ -1348,6 +1408,7 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
     )).join("");
     metricSelect.onchange = () => {
       state.metric = metricSelect.value;
+      saveViewState();
       render();
     };
 
@@ -1357,6 +1418,7 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
     )).join("");
     comparisonSelect.onchange = () => {
       state.comparison = comparisonSelect.value;
+      saveViewState();
       render();
     };
 
@@ -1472,7 +1534,7 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
       const avg = clients.length ? clients.reduce((s, c) => s + c.selected.current, 0) / clients.length : 0;
       document.getElementById("summary").innerHTML = [
         summaryCard("客户数", clients.length, "仅展示有日报趋势客户"),
-        summaryCard("当前指标", metric.name, "按当前值从低到高排序"),
+        summaryCard("当前指标", metric.name, metricsSortText() + "排序"),
         summaryCard("零值客户", zero, "当前时间段该指标为 0"),
         summaryCard("平均值", metric.format(avg) + (metric.unit ? " " + metric.unit : ""), "当前筛选客户均值"),
         summaryCard("可对比客户", compared, periodRange().compareLabel)
@@ -1485,15 +1547,35 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
     clients.forEach(c => counts[c.diagnosis.queue] = (counts[c.diagnosis.queue] || 0) + 1);
     const priority = topPriority(clients).length;
     document.getElementById("summary").innerHTML = [
-      summaryCard("今日优先跟进", priority, "按风险、价值、跟进超期综合排序"),
-      summaryCard("续费抢救", counts.rescue || 0, "临期且使用下滑/停用"),
-      summaryCard("使用骤降", counts.drop || 0, "核心指标明显下滑"),
-      summaryCard("个人版转化", counts.personal || 0, "个人版使用信号明显"),
-      summaryCard("稳定运营", counts.stable || 0, "未命中风险或机会规则")
+      summaryCard("今日优先跟进", priority, "按风险、价值、跟进超期综合排序", { action: "priority" }),
+      summaryCard("续费抢救", counts.rescue || 0, "临期且使用下滑/停用", { action: "rescue" }),
+      summaryCard("使用骤降", counts.drop || 0, "核心指标明显下滑", { action: "drop" }),
+      summaryCard("个人版转化", counts.personal || 0, "个人版使用信号明显", { action: "personal" }),
+      summaryCard("稳定运营", counts.stable || 0, "未命中风险或机会规则", { action: "stable" })
     ].join("");
+    bindSummaryCards();
   }
-  function summaryCard(label, value, note) {
-    return '<div class="summary-card"><div class="summary-label">' + escapeHtml(label) + '</div><div class="summary-value">' + value + '</div><div class="summary-note">' + escapeHtml(note) + '</div></div>';
+  function summaryCard(label, value, note, options) {
+    options = options || {};
+    const body = '<div class="summary-label">' + escapeHtml(label) + '</div><div class="summary-value">' + value + '</div><div class="summary-note">' + escapeHtml(note) + '</div>';
+    if (!options.action) return '<div class="summary-card">' + body + '</div>';
+    const active = state.diagnosisFocus === options.action ? " active" : "";
+    return '<button class="summary-card' + active + '" data-summary-focus="' + escapeHtml(options.action) + '" type="button">' + body + '</button>';
+  }
+  function bindSummaryCards() {
+    document.querySelectorAll("[data-summary-focus]").forEach(btn => {
+      btn.onclick = () => {
+        const focus = btn.dataset.summaryFocus || "";
+        state.diagnosisFocus = state.diagnosisFocus === focus ? "" : focus;
+        render();
+        if (state.diagnosisFocus) requestAnimationFrame(() => scrollToDiagnosisFocus(state.diagnosisFocus));
+      };
+    });
+  }
+  function scrollToDiagnosisFocus(focus) {
+    const id = focus === "priority" ? "diag-priority" : "diag-queue-" + focus;
+    const el = document.getElementById(id) || document.getElementById("main");
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
   }
   function renderMain(clients) {
     disposeCharts();
@@ -1505,39 +1587,84 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
   }
   function renderMetricsMain(clients) {
     const metric = metricDef(state.metric);
-    const sorted = clients.slice().sort((a, b) => a.selected.current - b.selected.current || a.name.localeCompare(b.name, "zh-CN"));
+    const sorted = sortClientsByMetric(clients);
+    const controls = metricsViewControls();
+    const body = state.metricsView === "renewal" ? metricsRenewalView(clients, metric) : metricsSortedView(sorted, metric);
     document.getElementById("main").innerHTML =
-      '<section class="section">' +
-        '<div class="section-header"><h2 class="section-title">' + escapeHtml(metric.name) + ' · 从低到高 · ' + sorted.length + ' 客户</h2></div>' +
-        '<div class="client-grid">' + sorted.map(c => clientCard(c, metric, "metric", "metrics")).join("") + '</div>' +
-      '</section>';
-    bindClientCards();
-    requestAnimationFrame(() => sorted.forEach(c => renderClientChart(c, metric, "metric")));
-  }
-  function topPriority(clients) {
-    return clients.filter(c => !["stable", "expired", "data-check"].includes(c.diagnosis.queue)).sort((a, b) => b.diagnosis.priority - a.diagnosis.priority).slice(0, 10);
-  }
-  function renderDiagnosisMain(clients) {
-    const tabs = '<section class="subtabs">' + DIAGNOSIS_VIEWS.map(v =>
-      '<button class="subtab-btn' + (v.key === state.diagnosisView ? " active" : "") + '" data-view="' + v.key + '">' + v.label + '</button>'
-    ).join("") + '</section>';
-    const top = topPriority(clients);
-    const topHtml = '<section class="section"><div class="section-header"><h2 class="section-title">今日优先跟进 Top 10</h2><div class="section-desc">综合风险、客户价值、续费窗口和跟进超期</div></div>' +
-      '<div class="client-grid">' + (top.length ? top.map((c, i) => clientCard(c, metricDef("dayRunCnt"), "priority", "diagnosis", { rank: i + 1, showPriority: true })).join("") : '<div class="empty">当前没有优先跟进客户</div>') + '</div></section>';
-    document.getElementById("main").innerHTML = tabs + topHtml + (state.diagnosisView === "renewal" ? renewalView(clients) : queueView(clients));
-    document.querySelectorAll(".subtab-btn").forEach(btn => {
+      controls + body;
+    document.querySelectorAll("[data-metrics-view]").forEach(btn => {
       btn.onclick = () => {
-        state.diagnosisView = btn.dataset.view;
+        state.metricsView = btn.dataset.metricsView;
+        saveViewState();
+        render();
+      };
+    });
+    document.querySelectorAll("[data-metric-sort]").forEach(btn => {
+      btn.onclick = () => {
+        state.metricSortDir = btn.dataset.metricSort === "desc" ? "desc" : "asc";
+        saveViewState();
         render();
       };
     });
     bindClientCards();
     requestAnimationFrame(() => {
+      if (state.metricsView === "renewal") {
+        clients.forEach(c => renderClientChart(c, metric, "metric-renewal-" + renewalQuarter(c.profile)));
+      } else {
+        sorted.forEach(c => renderClientChart(c, metric, "metric"));
+      }
+    });
+  }
+  function metricsViewControls() {
+    return '<section class="subtabs">' +
+      METRICS_VIEWS.map(v => '<button class="subtab-btn' + (v.key === state.metricsView ? " active" : "") + '" data-metrics-view="' + v.key + '" type="button">' + v.label + '</button>').join("") +
+      '<span class="control-label">排序</span>' +
+      [{ key: "asc", label: "从低到高" }, { key: "desc", label: "从高到低" }].map(v =>
+        '<button class="subtab-btn' + (v.key === state.metricSortDir ? " active" : "") + '" data-metric-sort="' + v.key + '" type="button">' + v.label + '</button>'
+      ).join("") +
+    '</section>';
+  }
+  function metricsSortText() {
+    return state.metricSortDir === "desc" ? "从高到低" : "从低到高";
+  }
+  function metricSortCompare(a, b) {
+    const dir = state.metricSortDir === "desc" ? -1 : 1;
+    const delta = (a.selected.current - b.selected.current) * dir;
+    return delta || a.name.localeCompare(b.name, "zh-CN");
+  }
+  function sortClientsByMetric(clients) {
+    return clients.slice().sort(metricSortCompare);
+  }
+  function metricsSortedView(sorted, metric) {
+    return '<section class="section">' +
+      '<div class="section-header"><h2 class="section-title">' + escapeHtml(metric.name) + ' · ' + metricsSortText() + ' · ' + sorted.length + ' 客户</h2></div>' +
+      '<div class="client-grid">' + sorted.map(c => clientCard(c, metric, "metric", "metrics")).join("") + '</div>' +
+    '</section>';
+  }
+  function metricsRenewalView(clients, metric) {
+    const order = ["Q1", "Q2", "Q3", "Q4", "不在续费期"];
+    return order.map(q => {
+      const items = sortClientsByMetric(clients.filter(c => renewalQuarter(c.profile) === q));
+      if (!items.length) return "";
+      return '<section class="section">' +
+        '<div class="group-header"><h2 class="group-title">' + q + ' 续费 · ' + items.length + '</h2><div class="group-desc">' + escapeHtml(metric.name) + ' · ' + metricsSortText() + '</div></div>' +
+        '<div class="client-grid">' + items.map(c => clientCard(c, metric, "metric-renewal-" + q, "metrics")).join("") + '</div>' +
+      '</section>';
+    }).join("") || '<div class="empty">当前筛选条件下没有续费季度数据</div>';
+  }
+  function topPriority(clients) {
+    return clients.filter(c => !["stable", "expired", "data-check"].includes(c.diagnosis.queue)).sort((a, b) => b.diagnosis.priority - a.diagnosis.priority).slice(0, 10);
+  }
+  function renderDiagnosisMain(clients) {
+    const top = topPriority(clients);
+    const topHtml = '<section class="section" id="diag-priority"><div class="section-header"><h2 class="section-title">今日优先跟进 Top 10</h2><div class="section-desc">综合风险、客户价值、续费窗口和跟进超期</div></div>' +
+      '<div class="client-grid">' + (top.length ? top.map((c, i) => clientCard(c, metricDef("dayRunCnt"), "priority", "diagnosis", { rank: i + 1, showPriority: true })).join("") : '<div class="empty">当前没有优先跟进客户</div>') + '</div></section>';
+    const queueHtml = queueView(clients);
+    document.getElementById("main").innerHTML = topHtml + queueHtml;
+    bindClientCards();
+    requestAnimationFrame(() => {
       top.forEach(c => renderClientChart(c, metricDef("dayRunCnt"), "priority"));
-      clients.forEach(c => {
-        renderClientChart(c, metricDef("dayRunCnt"), "diag-" + c.diagnosis.queue);
-        renderClientChart(c, metricDef("dayRunCnt"), "renewal-" + renewalQuarter(c.profile));
-      });
+      diagnosisQueueClients(clients).forEach(c => renderClientChart(c, metricDef("dayRunCnt"), "diag-" + c.diagnosis.queue));
     });
   }
   function bindClientCards() {
@@ -1549,25 +1676,19 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
     });
   }
   function queueView(clients) {
-    return QUEUES.map(queue => {
+    const focusedQueue = state.diagnosisFocus && state.diagnosisFocus !== "priority" ? state.diagnosisFocus : "";
+    return QUEUES.filter(queue => !focusedQueue || queue.key === focusedQueue).map(queue => {
       const items = clients.filter(c => c.diagnosis.queue === queue.key).sort((a, b) => b.diagnosis.priority - a.diagnosis.priority);
       if (!items.length) return "";
       return '<section class="section">' +
-        '<div class="group-header"><h2 class="group-title">' + queue.title + ' · ' + items.length + '</h2><div class="group-desc">' + queue.desc + '</div></div>' +
+        '<div class="group-header" id="diag-queue-' + escapeHtml(queue.key) + '"><h2 class="group-title">' + queue.title + ' · ' + items.length + '</h2><div class="group-desc">' + queue.desc + '</div></div>' +
         '<div class="client-grid">' + items.map(c => clientCard(c, metricDef("dayRunCnt"), "diag-" + queue.key, "diagnosis")).join("") + '</div>' +
       '</section>';
     }).join("") || '<div class="empty">当前筛选条件下没有诊断队列</div>';
   }
-  function renewalView(clients) {
-    const order = ["Q1", "Q2", "Q3", "Q4", "不在续费期"];
-    return order.map(q => {
-      const items = clients.filter(c => renewalQuarter(c.profile) === q).sort((a, b) => (a.daysRemaining ?? 99999) - (b.daysRemaining ?? 99999));
-      if (!items.length) return "";
-      return '<section class="section">' +
-        '<div class="group-header"><h2 class="group-title">' + q + ' 续费 · ' + items.length + '</h2><div class="group-desc">按到期天数从近到远</div></div>' +
-        '<div class="client-grid">' + items.map(c => clientCard(c, metricDef("dayRunCnt"), "renewal-" + q, "diagnosis")).join("") + '</div>' +
-      '</section>';
-    }).join("") || '<div class="empty">当前筛选条件下没有续费季度数据</div>';
+  function diagnosisQueueClients(clients) {
+    const focusedQueue = state.diagnosisFocus && state.diagnosisFocus !== "priority" ? state.diagnosisFocus : "";
+    return focusedQueue ? clients.filter(c => c.diagnosis.queue === focusedQueue) : clients;
   }
   function compactTags(client, mode) {
     const p = client.profile;
@@ -1641,9 +1762,9 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
       return aggregate(rows, metric.key, metric.aggregate);
     });
   }
-  function chartData(client, metric, comparisonOverride) {
+  function chartData(client, metric, comparisonOverride, rangeState) {
     const comparison = comparisonMode(comparisonOverride);
-    const range = periodRange(comparison);
+    const range = periodRange(comparison, rangeState);
     const currentValues = seriesForDates(client, metric, range.current, true);
     if (!range.compare) {
       return {
@@ -1680,11 +1801,11 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
       previousDates
     };
   }
-  function globalYAxisMax(metric, comparisonOverride) {
+  function globalYAxisMax(metric, comparisonOverride, rangeState) {
     if (!state.unifiedY[state.mode]) return null;
     let max = 0;
     currentClients.forEach(client => {
-      const data = chartData(client, metric, comparisonOverride);
+      const data = chartData(client, metric, comparisonOverride, rangeState);
       data.current.concat(data.previous || []).forEach(v => {
         if (v != null && Number.isFinite(v)) max = Math.max(max, Number(v));
       });
@@ -1701,11 +1822,12 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
       : (prefix.startsWith("diag-") || prefix.startsWith("renewal-") ? "period" : null);
     const chart = echarts.init(el, null, { renderer: "canvas" });
     store.set(el.id, chart);
-    const data = chartData(client, metric, comparisonOverride);
+    const rangeState = options.rangeState || null;
+    const data = chartData(client, metric, comparisonOverride, rangeState);
     el.classList.toggle("chart-empty", data.range.compare && !data.hasPreviousData);
     const queue = client.diagnosis.queue;
     const color = ["rescue", "expired", "data-check"].includes(queue) ? "#fb7185" : ["drop", "health", "followup", "new-onboarding", "big-swing"].includes(queue) ? "#fbbf24" : ["opportunity", "personal", "renewal-healthy"].includes(queue) ? "#34d399" : "#60a5fa";
-    const yMax = options.independentY ? null : globalYAxisMax(metric, comparisonOverride);
+    const yMax = options.independentY ? null : globalYAxisMax(metric, comparisonOverride, rangeState);
     chart.setOption({
       tooltip: {
         trigger: "axis",
@@ -1788,13 +1910,51 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
       }
     });
   }
+  function drawerRangeState() {
+    return {
+      period: state.drawerPeriod,
+      startDate: state.drawerStartDate,
+      endDate: state.drawerEndDate
+    };
+  }
+  function initDrawerDateState() {
+    const dates = allDates();
+    if (!dates.length) return;
+    const fallback = periodRange(null, {
+      period: state.drawerPeriod || "1m",
+      startDate: state.drawerStartDate,
+      endDate: state.drawerEndDate
+    });
+    if (!state.drawerEndDate) state.drawerEndDate = fallback.current[fallback.current.length - 1] || dates[dates.length - 1];
+    if (!state.drawerStartDate) state.drawerStartDate = fallback.current[0] || dates[0];
+  }
+  function drawerPeriodControls() {
+    const dates = allDates();
+    const range = periodRange(state.drawerComparison, drawerRangeState());
+    const minDate = ymdToInput(dates[0] || "");
+    const maxDate = ymdToInput(dates[dates.length - 1] || "");
+    const start = ymdToInput(range.current[0] || state.drawerStartDate || dates[0] || "");
+    const end = ymdToInput(range.current[range.current.length - 1] || state.drawerEndDate || dates[dates.length - 1] || "");
+    return '<div class="drawer-toolbar-group"><span class="control-label">时间段</span>' +
+      PERIODS.map(p => '<button class="metric-tab' + (p.key === state.drawerPeriod ? " active" : "") + '" data-drawer-period="' + p.key + '" type="button">' + p.label + '</button>').join("") +
+      '</div>' +
+      '<div class="drawer-toolbar-group"><span class="control-label">自定义</span>' +
+        '<input class="date-input" id="drawer-start-date" type="date" min="' + minDate + '" max="' + maxDate + '" value="' + start + '" aria-label="详情开始日期">' +
+        '<span class="date-sep">至</span>' +
+        '<input class="date-input" id="drawer-end-date" type="date" min="' + minDate + '" max="' + maxDate + '" value="' + end + '" aria-label="详情结束日期">' +
+      '</div>';
+  }
   function openDrawer(clientName) {
     const client = currentClients.find(c => c.name === clientName) || getClients(state.mode === "diagnosis" ? periodRange("period") : periodRange()).find(c => c.name === clientName);
     if (!client) return;
     hideChartTooltips(chartInstances);
     hideChartTooltips(drawerCharts);
     state.drawerClientName = client.name;
+    state.drawerPeriod = state.period;
+    state.drawerStartDate = state.startDate;
+    state.drawerEndDate = state.endDate;
     state.drawerComparison = state.mode === "diagnosis" ? "period" : state.comparison;
+    initDrawerDateState();
     renderDrawer(client);
   }
   function closeDrawer() {
@@ -1814,6 +1974,7 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
   function renderDrawer(client, preserveScroll) {
     const drawer = document.getElementById("drawer");
     const backdrop = document.getElementById("drawer-backdrop");
+    initDrawerDateState();
     const p = client.profile || {};
     const uuid = p.organizationUuid || p.uuid || "";
     const bossUrl = uuid ? "https://boss.shadow-rpa.net/simple/manage/microApp/boss/busi/enterpriseDetail?organizationUuid=" + encodeURIComponent(uuid) : "";
@@ -1838,6 +1999,7 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
       '<div class="drawer-body">' +
         '<section class="drawer-section">' +
           '<div class="drawer-toolbar">' +
+            drawerPeriodControls() +
             '<div class="drawer-toolbar-group"><span class="control-label">对比</span>' +
               COMPARISONS.map(c => '<button class="metric-tab' + (c.key === state.drawerComparison ? " active" : "") + '" data-drawer-comparison="' + c.key + '" type="button">' + c.label + '</button>').join("") +
             '</div>' +
@@ -1867,6 +2029,7 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
     drawer.scrollTop = prevScroll;
     document.getElementById("drawer-close").onclick = closeDrawer;
     backdrop.onclick = closeDrawer;
+    bindDrawerRangeControls(client);
     drawer.querySelectorAll("[data-drawer-comparison]").forEach(btn => {
       btn.onclick = () => {
         hideChartTooltips(chartInstances);
@@ -1885,8 +2048,37 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
     bindDrawerResize();
     requestAnimationFrame(() => renderDrawerCharts(client));
   }
+  function bindDrawerRangeControls(client) {
+    document.querySelectorAll("[data-drawer-period]").forEach(btn => {
+      btn.onclick = () => {
+        hideChartTooltips(drawerCharts);
+        state.drawerPeriod = btn.dataset.drawerPeriod;
+        renderDrawer(client, true);
+      };
+    });
+    const startInput = document.getElementById("drawer-start-date");
+    const endInput = document.getElementById("drawer-end-date");
+    if (startInput) {
+      startInput.onchange = () => {
+        hideChartTooltips(drawerCharts);
+        state.drawerPeriod = "custom";
+        state.drawerStartDate = inputToYmd(startInput.value);
+        state.drawerEndDate = inputToYmd((endInput && endInput.value) || startInput.value);
+        renderDrawer(client, true);
+      };
+    }
+    if (endInput) {
+      endInput.onchange = () => {
+        hideChartTooltips(drawerCharts);
+        state.drawerPeriod = "custom";
+        state.drawerStartDate = inputToYmd((startInput && startInput.value) || endInput.value);
+        state.drawerEndDate = inputToYmd(endInput.value);
+        renderDrawer(client, true);
+      };
+    }
+  }
   function drawerMetricValues(client) {
-    const range = periodRange(state.drawerComparison);
+    const range = periodRange(state.drawerComparison, drawerRangeState());
     const curSet = new Set(range.current);
     const prevSet = new Set(comparisonDates(range, state.drawerComparison));
     const currentRows = client.rows.filter(r => curSet.has(r.statisticDate));
@@ -1909,6 +2101,7 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
     METRICS.forEach(m => {
       renderClientChart(client, m, "drawer-" + m.key, {
         comparison: state.drawerComparison,
+        rangeState: drawerRangeState(),
         independentY: true,
         store: drawerCharts
       });
@@ -1971,11 +2164,11 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
   function renderTable(clients) {
     if (state.mode === "metrics") {
       const metric = metricDef(state.metric);
-      const sorted = clients.slice().sort((a, b) => a.selected.current - b.selected.current || a.name.localeCompare(b.name, "zh-CN"));
+      const sorted = metricsTableClients(clients);
       document.getElementById("table-title").textContent = "指标观察明细";
-      document.getElementById("table-head").innerHTML = '<tr><th>客户</th><th>CS</th><th>阶段</th><th>到期天数</th><th>当前指标</th><th>对比</th><th>运行次数</th><th>运行时长</th><th>活跃应用</th><th>高级账号使用率</th><th>有效运行占比</th></tr>';
+      document.getElementById("table-head").innerHTML = '<tr><th>客户</th><th>CS</th><th>阶段</th><th>续费季度</th><th>到期天数</th><th>当前指标</th><th>对比</th><th>运行次数</th><th>运行时长</th><th>活跃应用</th><th>高级账号使用率</th><th>有效运行占比</th></tr>';
       document.getElementById("table-body").innerHTML = sorted.map(c => '<tr>' +
-        '<td>' + escapeHtml(c.name) + '</td><td>' + escapeHtml(c.profile.csOwner || "未填写") + '</td><td>' + escapeHtml(c.profile.serviceStage || "未填写") + '</td><td>' + daysText(c.daysRemaining) + '</td>' +
+        '<td>' + escapeHtml(c.name) + '</td><td>' + escapeHtml(c.profile.csOwner || "未填写") + '</td><td>' + escapeHtml(c.profile.serviceStage || "未填写") + '</td><td>' + escapeHtml(renewalQuarter(c.profile)) + '</td><td>' + daysText(c.daysRemaining) + '</td>' +
         '<td>' + metric.format(c.selected.current) + (metric.unit ? " " + metric.unit : "") + '</td><td class="' + changeClass(c.selected.change) + '">' + formatCompareValue(c.selected, "metrics") + '</td>' +
         '<td>' + formatNumber((c.values.dayRunCnt || {}).current) + '</td><td>' + formatDuration((c.values.dayRunDura || {}).current) + ' 小时</td><td>' + formatDecimal((c.values.dayActiveAppCnt || {}).current) + '</td>' +
         '<td>' + formatPercent((c.values.seniorAccountUseRate || {}).current) + '</td><td>' + formatPercent((c.values.effectiveRunRate || {}).current) + '</td></tr>').join("");
@@ -1988,6 +2181,18 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
       '<td>' + escapeHtml(c.name) + '</td><td>' + escapeHtml(queueTitle(c.diagnosis.queue)) + '</td><td>' + Math.round(c.diagnosis.priority) + '</td><td>' + escapeHtml(c.profile.customerTier || "未分层") + '</td>' +
       '<td>' + escapeHtml(c.profile.csOwner || "未填写") + '</td><td>' + escapeHtml(c.profile.serviceStage || "未填写") + '</td><td>' + escapeHtml(renewalQuarter(c.profile)) + '</td><td>' + daysText(c.daysRemaining) + '</td>' +
       '<td>' + (c.daysSinceFollowUp == null ? "未知" : c.daysSinceFollowUp + "天") + '</td><td>' + escapeHtml(c.diagnosis.reason) + '</td><td>' + escapeHtml(c.diagnosis.action) + '</td></tr>').join("");
+  }
+  function metricsTableClients(clients) {
+    if (state.metricsView !== "renewal") return sortClientsByMetric(clients);
+    const quarterOrder = ["Q1", "Q2", "Q3", "Q4", "不在续费期"];
+    return clients.slice().sort((a, b) => {
+      const aq = renewalQuarter(a.profile);
+      const bq = renewalQuarter(b.profile);
+      const ai = quarterOrder.indexOf(aq);
+      const bi = quarterOrder.indexOf(bq);
+      const quarterDelta = (ai === -1 ? quarterOrder.length : ai) - (bi === -1 ? quarterOrder.length : bi);
+      return quarterDelta || metricSortCompare(a, b);
+    });
   }
   function render() {
     initDateState();
