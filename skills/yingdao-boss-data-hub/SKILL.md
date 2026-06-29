@@ -1,9 +1,9 @@
 ---
-name: yingdao-boss-client-fetch
+name: yingdao-boss-data-hub
 description: Fetch customer/client data from Yingdao's Boss platform through the Boss login, asCode exchange, and AppStudio token chain, then download all paginated datasource records for a specified business group. Use when a user asks to pull, export, refresh, or inspect Yingdao Boss customer tables, configure this workflow for first use, or produce the shared latest dataset that a downstream analysis skill will consume.
 ---
 
-# Yingdao Boss Client Fetch
+# Yingdao Boss Data Hub
 
 ## Overview
 
@@ -25,7 +25,7 @@ Do not keep `config.local.json` or fetched customer-data outputs inside the skil
 Recommended runtime config location:
 
 ```text
-runtime/yingdao-boss-client-fetch/config.local.json
+runtime/yingdao-boss-data-hub/config.local.json
 ```
 
 ## Install dependencies
@@ -33,7 +33,7 @@ runtime/yingdao-boss-client-fetch/config.local.json
 Run from the skill root directory:
 
 ```bash
-pip install -r skills/yingdao-boss-client-fetch/scripts/requirements.txt
+pip install -r skills/yingdao-boss-data-hub/scripts/requirements.txt
 ```
 
 ## Default workflow
@@ -83,31 +83,31 @@ That analysis skill should read these files by default instead of expecting a ne
 Use the default configured business group and update the shared latest dataset:
 
 ```bash
-python3 skills/yingdao-boss-client-fetch/scripts/fetch_clients.py
+python3 skills/yingdao-boss-data-hub/scripts/fetch_clients.py
 ```
 
 Use an explicit config path:
 
 ```bash
-python3 skills/yingdao-boss-client-fetch/scripts/fetch_clients.py --config ./runtime/yingdao-boss-client-fetch/config.local.json
+python3 skills/yingdao-boss-data-hub/scripts/fetch_clients.py --config ./runtime/yingdao-boss-data-hub/config.local.json
 ```
 
 Override the business group for one run:
 
 ```bash
-python3 skills/yingdao-boss-client-fetch/scripts/fetch_clients.py --business-group "江苏业务组"
+python3 skills/yingdao-boss-data-hub/scripts/fetch_clients.py --business-group "江苏业务组"
 ```
 
 Write a custom one-off output file instead of the shared latest path:
 
 ```bash
-python3 skills/yingdao-boss-client-fetch/scripts/fetch_clients.py --output ./custom-output.json
+python3 skills/yingdao-boss-data-hub/scripts/fetch_clients.py --output ./custom-output.json
 ```
 
 Update the shared latest dataset and also save an archive snapshot:
 
 ```bash
-python3 skills/yingdao-boss-client-fetch/scripts/fetch_clients.py --archive
+python3 skills/yingdao-boss-data-hub/scripts/fetch_clients.py --archive
 ```
 
 ### Fetching Contracts
@@ -115,7 +115,7 @@ python3 skills/yingdao-boss-client-fetch/scripts/fetch_clients.py --archive
 Ensure you have run `fetch_clients.py` first, then run:
 
 ```bash
-python3 skills/yingdao-boss-client-fetch/scripts/fetch_contracts.py
+python3 skills/yingdao-boss-data-hub/scripts/fetch_contracts.py
 ```
 
 It supports similar arguments (`--config`, `--output`, `--page-size`, `--archive`, `--clients-input`).
@@ -126,7 +126,7 @@ Furthermore, you can pull a specific client's contracts using the `--client-no` 
 Once contracts are pulled, you can evaluate the expiration status of customer purchases.
 
 ```bash
-python3 skills/yingdao-boss-client-fetch/scripts/analyze_expiring_orders.py
+python3 skills/yingdao-boss-data-hub/scripts/analyze_expiring_orders.py
 ```
 
 This script:
@@ -142,7 +142,7 @@ This script:
 You can pull the detailed list of applications and their usage statistics for your clients:
 
 ```bash
-python3 skills/yingdao-boss-client-fetch/scripts/fetch_apps.py
+python3 skills/yingdao-boss-data-hub/scripts/fetch_apps.py
 ```
 
 This script will automatically:
@@ -154,7 +154,7 @@ This script will automatically:
 Like the contract fetcher, you can pull apps for a specific client to save them independently:
 
 ```bash
-python3 skills/yingdao-boss-client-fetch/scripts/fetch_apps.py --client-name "江苏**"
+python3 skills/yingdao-boss-data-hub/scripts/fetch_apps.py --client-name "江苏**"
 ```
 
 ### Fetching Tenant Data Reports (Daily Statistics)
@@ -162,7 +162,7 @@ python3 skills/yingdao-boss-client-fetch/scripts/fetch_apps.py --client-name "�
 You can pull the daily usage data reports (daily statistics) for your clients:
 
 ```bash
-python3 skills/yingdao-boss-client-fetch/scripts/fetch_tenant_reports.py
+python3 skills/yingdao-boss-data-hub/scripts/fetch_tenant_reports.py
 ```
 
 This script will automatically:
@@ -174,7 +174,7 @@ This script will automatically:
 You can also target specific clients or override the date range (defaulting to the last 365 days):
 
 ```bash
-python3 skills/yingdao-boss-client-fetch/scripts/fetch_tenant_reports.py \
+python3 skills/yingdao-boss-data-hub/scripts/fetch_tenant_reports.py \
   --client-name "妮茜雅" \
   --start-date "20250616" \
   --end-date "20260615"
@@ -187,7 +187,7 @@ Use the static dashboard workflow when the user wants to inspect client-success 
 Recommended one-command workflow:
 
 ```bash
-python3 skills/yingdao-boss-client-fetch/dashboard/refresh_dashboard.py
+python3 skills/yingdao-boss-data-hub/dashboard/refresh_dashboard.py
 ```
 
 `refresh_dashboard.py` checks whether each related JSON output is already from today (timezone default: `Asia/Shanghai`). If a file is fresh, it skips the corresponding data fetch/analyze step; if a file is missing or stale, it runs the needed step. It always rebuilds `dashboard.html` at the end.
@@ -195,11 +195,11 @@ python3 skills/yingdao-boss-client-fetch/dashboard/refresh_dashboard.py
 Equivalent full data refresh order:
 
 ```bash
-python3 skills/yingdao-boss-client-fetch/scripts/fetch_clients.py
-python3 skills/yingdao-boss-client-fetch/scripts/fetch_contracts.py
-python3 skills/yingdao-boss-client-fetch/scripts/analyze_expiring_orders.py
-python3 skills/yingdao-boss-client-fetch/scripts/fetch_tenant_reports.py
-python3 skills/yingdao-boss-client-fetch/dashboard/build_data.py
+python3 skills/yingdao-boss-data-hub/scripts/fetch_clients.py
+python3 skills/yingdao-boss-data-hub/scripts/fetch_contracts.py
+python3 skills/yingdao-boss-data-hub/scripts/analyze_expiring_orders.py
+python3 skills/yingdao-boss-data-hub/scripts/fetch_tenant_reports.py
+python3 skills/yingdao-boss-data-hub/dashboard/build_data.py
 ```
 
 The dashboard builder reads:
@@ -211,7 +211,7 @@ The dashboard builder reads:
 It writes the self-contained static dashboard:
 
 ```text
-skills/yingdao-boss-client-fetch/dashboard/dashboard.html
+skills/yingdao-boss-data-hub/dashboard/dashboard.html
 ```
 
 Dashboard file responsibilities:
@@ -247,7 +247,7 @@ The output uses a stable structure for downstream skills:
 
 ```json
 {
-  "schema": "yingdao-boss-client-fetch.v1",
+  "schema": "yingdao-boss-data-hub.v1",
   "meta": {
     "fetched_at": "...",
     "business_group": "江苏业务组",
@@ -298,23 +298,23 @@ Dates are computed automatically: `endDate` = yesterday, `startDate` = 365 days 
 Export dashboards for one or more clients using defaults:
 
 ```bash
-python3 skills/yingdao-boss-client-fetch/scripts/export_dashboard.py \
+python3 skills/yingdao-boss-data-hub/scripts/export_dashboard.py \
   --client-names "南京***电子商务有限公司" "上海***电子商务有限公司"
 ```
 
 With a custom config and output directory:
 
 ```bash
-python3 skills/yingdao-boss-client-fetch/scripts/export_dashboard.py \
+python3 skills/yingdao-boss-data-hub/scripts/export_dashboard.py \
   --client-names "江苏***药房连锁有限公司" \
-  --config ./runtime/yingdao-boss-client-fetch/config.local.json \
+  --config ./runtime/yingdao-boss-data-hub/config.local.json \
   --output-dir ./runtime/yingdao-boss/exports
 ```
 
 Override the end date (useful for back-filling):
 
 ```bash
-python3 skills/yingdao-boss-client-fetch/scripts/export_dashboard.py \
+python3 skills/yingdao-boss-data-hub/scripts/export_dashboard.py \
   --client-names "南京***电子商务有限公司" \
   --end-date 20260401
 ```
@@ -343,16 +343,16 @@ Downloaded xlsx files are saved to `output_dir` (default `/tmp`). The script als
 
 ## Resources
 
-- `skills/yingdao-boss-client-fetch/scripts/fetch_clients.py`: end-to-end fetch script for client basic data
-- `skills/yingdao-boss-client-fetch/scripts/fetch_contracts.py`: end-to-end fetch script for client contracts
-- `skills/yingdao-boss-client-fetch/scripts/export_dashboard.py`: three-step async export of tenant dashboard xlsx files
-- `skills/yingdao-boss-client-fetch/scripts/analyze_expiring_orders.py`: analysis script for isolating clients with soon-to-expire subscriptions
-- `skills/yingdao-boss-client-fetch/scripts/fetch_apps.py`: end-to-end fetch script for client application lists & dashboard stats
-- `skills/yingdao-boss-client-fetch/scripts/fetch_tenant_reports.py`: end-to-end fetch script for client daily tenant reports
-- `skills/yingdao-boss-client-fetch/dashboard/build_data.py`: builds the self-contained customer-success dashboard from latest JSON outputs
-- `skills/yingdao-boss-client-fetch/dashboard/refresh_dashboard.py`: refreshes stale dashboard JSON inputs, skips same-day outputs, and rebuilds the dashboard
-- `skills/yingdao-boss-client-fetch/dashboard/_template.html`: source template for the generated dashboard
-- `skills/yingdao-boss-client-fetch/dashboard/dashboard.html`: generated static dashboard artifact
-- `skills/yingdao-boss-client-fetch/scripts/requirements.txt`: Python dependencies
-- `skills/yingdao-boss-client-fetch/config.template.json`: configuration template without secrets
-- `skills/yingdao-boss-client-fetch/references/api-notes.md`: request flow, enums, schema translation, and shared-data notes
+- `skills/yingdao-boss-data-hub/scripts/fetch_clients.py`: end-to-end fetch script for client basic data
+- `skills/yingdao-boss-data-hub/scripts/fetch_contracts.py`: end-to-end fetch script for client contracts
+- `skills/yingdao-boss-data-hub/scripts/export_dashboard.py`: three-step async export of tenant dashboard xlsx files
+- `skills/yingdao-boss-data-hub/scripts/analyze_expiring_orders.py`: analysis script for isolating clients with soon-to-expire subscriptions
+- `skills/yingdao-boss-data-hub/scripts/fetch_apps.py`: end-to-end fetch script for client application lists & dashboard stats
+- `skills/yingdao-boss-data-hub/scripts/fetch_tenant_reports.py`: end-to-end fetch script for client daily tenant reports
+- `skills/yingdao-boss-data-hub/dashboard/build_data.py`: builds the self-contained customer-success dashboard from latest JSON outputs
+- `skills/yingdao-boss-data-hub/dashboard/refresh_dashboard.py`: refreshes stale dashboard JSON inputs, skips same-day outputs, and rebuilds the dashboard
+- `skills/yingdao-boss-data-hub/dashboard/_template.html`: source template for the generated dashboard
+- `skills/yingdao-boss-data-hub/dashboard/dashboard.html`: generated static dashboard artifact
+- `skills/yingdao-boss-data-hub/scripts/requirements.txt`: Python dependencies
+- `skills/yingdao-boss-data-hub/config.template.json`: configuration template without secrets
+- `skills/yingdao-boss-data-hub/references/api-notes.md`: request flow, enums, schema translation, and shared-data notes

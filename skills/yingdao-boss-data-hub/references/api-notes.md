@@ -96,7 +96,7 @@ runtime/yingdao-boss/latest-contracts.json
 无论输出哪个对象，其基础的 JSON 外部结构如下：
 ```json
 {
-  "schema": "yingdao-boss-client-fetch-contracts.v1",
+  "schema": "yingdao-boss-data-hub-contracts.v1",
   "meta": {
     "fetched_at": "2026-04-19T23:28:17.382024+00:00",
     "business_group": "...",

@@ -40,19 +40,19 @@ To restore functionality, this update migrates all fetching logic to use the Bos
 
 All updated scripts were tested successfully in the `llm` conda environment:
 
-1. **Client Fetching**:
+1. **Client Data Fetching**:
    ```bash
-   python3 skills/yingdao-boss-client-fetch/scripts/fetch_clients.py --business-group "江苏业务组"
+   python3 skills/yingdao-boss-data-hub/scripts/fetch_clients.py --business-group "江苏业务组"
    ```
 2. **Contract Fetching**:
    ```bash
-   python3 skills/yingdao-boss-client-fetch/scripts/fetch_contracts.py
+   python3 skills/yingdao-boss-data-hub/scripts/fetch_contracts.py
    ```
 3. **App statistics Fetching**:
    ```bash
-   python3 skills/yingdao-boss-client-fetch/scripts/fetch_apps.py
+   python3 skills/yingdao-boss-data-hub/scripts/fetch_apps.py
    ```
 4. **Downstream Expiration Analysis**:
    ```bash
-   python3 skills/yingdao-boss-client-fetch/scripts/analyze_expiring_orders.py
+   python3 skills/yingdao-boss-data-hub/scripts/analyze_expiring_orders.py
    ```

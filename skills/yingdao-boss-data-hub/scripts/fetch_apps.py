@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
-fetch_tenant_reports.py
+fetch_apps.py
 
-Fetches the "Tenant Data Reports" (queryTenantDataDayListRange) for Yingdao Boss clients.
+Fetches the "App Dashboard" (Application List) for Yingdao Boss clients.
 It supports fetching all clients or targeting specific ones via --client-no or --client-name.
+Because the App Dashboard requires a `tenantUuid` rather than the `organizationUuid`,
+this script first resolves the `tenantUuid` by calling the `mergeInfo` API.
 
 Usage:
-  python3 fetch_tenant_reports.py [--client-name "妮茜雅"] [--start-date 20250616] [--end-date 20260615]
+  python3 fetch_apps.py [--client-name "江苏润天"]
 """
 
 import argparse
@@ -15,18 +17,17 @@ import sys
 import os
 import time
 import concurrent.futures
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-# Re-use existing utility methods from fetch_clients
 from fetch_clients import build_session, login_to_yingdao_boss, request_json, ApiError
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Fetch Tenant Data Reports from Yingdao Boss for clients.")
+    parser = argparse.ArgumentParser(description="Fetch Application lists from Yingdao Boss for clients.")
     parser.add_argument(
         "--config",
-        default="runtime/yingdao-boss-client-fetch/config.local.json",
+        default="runtime/yingdao-boss-data-hub/config.local.json",
         help="Path to the JSON configuration file",
     )
     parser.add_argument(
@@ -42,59 +43,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--client-no",
         default="",
-        help="Fetch reports ONLY for this specific client number",
+        help="Fetch apps ONLY for this specific client number (e.g. 20230727-021242)",
     )
     parser.add_argument(
         "--client-name",
         default="",
-        help="Fetch reports ONLY for clients whose name contains this string",
-    )
-    parser.add_argument(
-        "--start-date",
-        default="",
-        help="Start date in YYYYMMDD format (defaults to 365 days before end date)",
-    )
-    parser.add_argument(
-        "--end-date",
-        default="",
-        help="End date in YYYYMMDD format (defaults to yesterday)",
-    )
-    parser.add_argument(
-        "--limit",
-        type=int,
-        default=0,
-        help="Limit the number of clients to fetch",
-    )
-    parser.add_argument(
-        "--random-select",
-        action="store_true",
-        help="Randomly select clients when limit is specified",
+        help="Fetch apps ONLY for clients whose name contains this string (e.g. 江苏润天)",
     )
     return parser.parse_args()
-
-
-def compute_date_range(start_date_str: str, end_date_str: str) -> tuple[str, str]:
-    """
-    Computes start and end dates based on input arguments.
-    Defaults end_date to yesterday and start_date to 365 days before end_date.
-    """
-    if end_date_str:
-        try:
-            end_date = datetime.strptime(end_date_str, "%Y%m%d").date()
-        except ValueError as exc:
-            raise ValueError(f"Invalid --end-date format (expected YYYYMMDD): {end_date_str}") from exc
-    else:
-        end_date = datetime.now().date() - timedelta(days=1)
-
-    if start_date_str:
-        try:
-            start_date = datetime.strptime(start_date_str, "%Y%m%d").date()
-        except ValueError as exc:
-            raise ValueError(f"Invalid --start-date format (expected YYYYMMDD): {start_date_str}") from exc
-    else:
-        start_date = end_date - timedelta(days=365)
-
-    return start_date.strftime("%Y%m%d"), end_date.strftime("%Y%m%d")
 
 
 def get_tenant_uuid(session: Any, config: dict[str, Any], boss_access_token: str, organization_uuid: str) -> str:
@@ -102,6 +58,7 @@ def get_tenant_uuid(session: Any, config: dict[str, Any], boss_access_token: str
     Calls the mergeInfo API to get the enterpriseUuid (which serves as tenantUuid) 
     for a given organizationUuid.
     """
+    # Fallback to the endpoint if not in config
     merge_info_url = config.get("endpoints", {}).get(
         "merge_info_url", 
         "https://boss-api.shadow-rpa.net/boss/api/v1/organization/mergeInfo"
@@ -127,6 +84,7 @@ def get_tenant_uuid(session: Any, config: dict[str, Any], boss_access_token: str
         
         data_block = resp.get("data")
         if not data_block or not isinstance(data_block, dict):
+            # Fall back to organizationUuid if no merge record is found
             return organization_uuid
             
         enterprise_uuid = data_block.get("enterpriseUuid", "")
@@ -136,17 +94,17 @@ def get_tenant_uuid(session: Any, config: dict[str, Any], boss_access_token: str
         return organization_uuid
 
 
-def get_tenant_reports(session: Any, config: dict[str, Any], boss_access_token: str, tenant_uuid: str, start_date: str, end_date: str) -> list[dict[str, Any]]:
+def get_app_dashboard_page(session: Any, config: dict[str, Any], boss_access_token: str, tenant_uuid: str, current_page: int, page_size: int) -> dict[str, Any]:
     """
-    Fetches the daily tenant data report for a given tenant UUID.
+    Fetches a single page of the app dashboard list for a given tenant.
     """
-    url = config.get("endpoints", {}).get(
-        "tenant_data_day_list_range_url",
-        "https://boss-api.shadow-rpa.net/boss/api/v3/aftersales/tenantData/queryTenantDataDayListRange"
+    app_dashboard_url = config.get("endpoints", {}).get(
+        "app_dashboard_url", 
+        "https://boss-api.shadow-rpa.net/boss/api/v3/aftersales/appData/queryAppDashboardInfo"
     )
     
     headers = {
-        "accept": "*/*",
+        "accept": "application/json",
         "authorization": f"Bearer {boss_access_token}",
         "content-type": "application/json",
         "referer": config["endpoints"].get("referer", "https://boss.shadow-rpa.net/"),
@@ -154,44 +112,49 @@ def get_tenant_reports(session: Any, config: dict[str, Any], boss_access_token: 
     
     payload = {
         "tenantUuid": tenant_uuid,
-        "startDate": start_date,
-        "endDate": end_date
+        "status": "r",
+        "orderBy": "order by month_run_dura desc",
+        "pageIndex": current_page,
+        "pageSize": page_size
     }
     
-    resp = request_json(
+    return request_json(
         session,
         "POST",
-        url,
+        app_dashboard_url,
         headers=headers,
         json=payload,
         verify=(config.get("ssl_verify") or {}).get("default", True)
     )
+
+def extract_app_page_block(response: dict[str, Any]) -> tuple[list[dict[str, Any]], int, int]:
+    """
+    Parses the response and returns (rows, total_pages, total_items).
+    """
+    if not response.get("success"):
+        raise ApiError(f"API returned success=false: {response.get('code')} - {response.get('msg')}")
+        
+    data_block = response.get("data")
+    if not data_block or not isinstance(data_block, dict):
+        raise ApiError("Could not locate data block in response")
+        
+    rows = data_block.get("result") or []
+    if not isinstance(rows, list):
+        raise ApiError("App result data is not a list")
+
+    page_info = data_block.get("pageDTO") or {}
+    total = page_info.get("total", 0)
+    pages = page_info.get("pages", 1)
     
-    if not resp.get("success"):
-        raise ApiError(f"API returned success=false: {resp.get('code')} - {resp.get('msg')}")
-        
-    data_list = resp.get("data") or []
-    if not isinstance(data_list, list):
-        raise ApiError("Tenant reports result data is not a list")
-        
-    return data_list
+    return rows, pages, total
 
 
-def fetch_reports_for_clients(
-    config: dict[str, Any], 
-    clients: list[dict[str, Any]], 
-    start_date: str,
-    end_date: str,
-    target_client_no: str = "", 
-    target_client_name: str = "",
-    limit: int = 0,
-    random_select: bool = False
-) -> list[dict[str, Any]]:
+def fetch_apps_for_clients(config: dict[str, Any], clients: list[dict[str, Any]], page_size: int, target_client_no: str = "", target_client_name: str = "") -> list[dict[str, Any]]:
     session = build_session(config)
-    print("Authenticating with Yingdao Boss for reports...", file=sys.stderr)
+    print("Authenticating with Yingdao Boss for apps...", file=sys.stderr)
     boss_access_token = login_to_yingdao_boss(session, config)
 
-    all_reports = []
+    all_apps = []
     
     unique_clients = []
     seen_org_uuids = set()
@@ -210,10 +173,6 @@ def fetch_reports_for_clients(
         if target_client_name and target_client_name not in client_name:
             continue
             
-        # Filter out private cloud clients since their tenant data cannot be accessed
-        if "私有云" in row.get("RPA部署类型", []):
-            continue
-            
         if org_uuid not in seen_org_uuids:
             seen_org_uuids.add(org_uuid)
             unique_clients.append({
@@ -222,83 +181,77 @@ def fetch_reports_for_clients(
                 "org_uuid": org_uuid
             })
 
-    if random_select:
-        import random
-        random.shuffle(unique_clients)
-
-    if limit > 0:
-        unique_clients = unique_clients[:limit]
-
-    delay = float(config.get("network", {}).get("request_delay_seconds", 0.5))
-    print(f"Found {len(unique_clients)} unique clients. Fetching reports...", file=sys.stderr)
+    print(f"Found {len(unique_clients)} unique clients. Fetching apps...", file=sys.stderr)
     
     def fetch_single_client(client_info, idx, total_len):
-        client_reports = []
+        client_apps = []
         cname = client_info["client_name"]
         org_uuid = client_info["org_uuid"]
         custom_no = client_info["custom_no"]
         
         # Resolve tenantUuid (falls back to org_uuid if no merge record exists)
         tenant_uuid = get_tenant_uuid(session, config, boss_access_token, org_uuid) or org_uuid
-        
-        if delay > 0:
-            time.sleep(delay)
             
-        print(f"[{idx}/{total_len}] Fetching reports for client: {cname} (Tenant: {tenant_uuid})", file=sys.stderr)
+        print(f"[{idx}/{total_len}] Fetching apps for client: {cname} (Tenant: {tenant_uuid})", file=sys.stderr)
         
-        retries = 3
-        while retries > 0:
-            try:
-                reports = get_tenant_reports(session, config, boss_access_token, tenant_uuid, start_date, end_date)
-                # Inject tracking metadata
-                for r in reports:
-                    r["_customNo"] = custom_no
-                    r["_organizationUuid"] = org_uuid
-                    r["_organizationName"] = cname
-                    
-                client_reports.extend(reports)
-                break
-            except Exception as e:
-                retries -= 1
-                if retries == 0:
-                    print(f"[{idx}/{total_len}] Error fetching reports for {cname} after retries: {e}", file=sys.stderr)
-                    return client_reports
-                time.sleep(1)
+        # 2. Fetch pages
+        current_page = 1
+        while True:
+            retries = 3
+            page_rows = None
+            returned_pages = 1
+            while retries > 0:
+                try:
+                    response = get_app_dashboard_page(session, config, boss_access_token, tenant_uuid, current_page, page_size)
+                    page_rows, returned_pages, _ = extract_app_page_block(response)
+                    break
+                except Exception as e:
+                    retries -= 1
+                    if retries == 0:
+                        print(f"[{idx}/{total_len}] Error fetching page {current_page} for {cname} after retries: {e}", file=sys.stderr)
+                        return client_apps
+                    time.sleep(1)
+            
+            # Inject tracking metadata
+            for r in page_rows:
+                r["_customNo"] = custom_no
+                r["_organizationUuid"] = org_uuid
+                r["_organizationName"] = cname
                 
-        if delay > 0:
-            time.sleep(delay)
+            client_apps.extend(page_rows)
             
-        return client_reports
+            if current_page >= returned_pages or not page_rows:
+                break
+                
+            current_page += 1
+            
+        return client_apps
 
     # Use ThreadPoolExecutor to fetch clients concurrently
-    max_workers = int(config.get("network", {}).get("max_threads", 2))
-    print(f"Starting fetch using max_threads={max_workers}, throttling={delay}s...", file=sys.stderr)
+    max_workers = config.get("network", {}).get("max_threads", 5)
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [executor.submit(fetch_single_client, c, i, len(unique_clients)) for i, c in enumerate(unique_clients, 1)]
         for future in concurrent.futures.as_completed(futures):
             try:
                 result = future.result()
-                all_reports.extend(result)
+                all_apps.extend(result)
             except Exception as e:
                 print(f"Error executing fetch task: {e}", file=sys.stderr)
 
-    return all_reports
+    return all_apps
 
 
-def build_output_document(config: dict[str, Any], bg: str, start_date: str, end_date: str, all_reports: list[dict[str, Any]]) -> dict[str, Any]:
+def build_output_document(config: dict[str, Any], bg: str, all_apps: list[dict[str, Any]]) -> dict[str, Any]:
     fetched_at = datetime.now(timezone.utc).astimezone().isoformat()
     return {
-        "schema": "yingdao-boss-client-fetch-tenant-reports.v1",
+        "schema": "yingdao-boss-data-hub-apps.v1",
         "meta": {
             "fetched_at": fetched_at,
             "business_group": bg,
-            "start_date": start_date,
-            "end_date": end_date,
-            "total_records": len(all_reports),
+            "total_apps": len(all_apps),
         },
-        "rows": all_reports,
+        "rows": all_apps,
     }
-
 
 def main() -> int:
     args = parse_args()
@@ -332,26 +285,16 @@ def main() -> int:
         print(f"Warning: No clients found in {clients_path}.", file=sys.stderr)
         return 0
 
+    page_size = config.get("defaults", {}).get("page_size", 100)
     bg = clients_doc.get("meta", {}).get("business_group", config.get("defaults", {}).get("default_business_group", ""))
 
     try:
-        start_date, end_date = compute_date_range(args.start_date, args.end_date)
-    except ValueError as e:
-        print(str(e), file=sys.stderr)
-        return 1
-
-    print(f"Querying daily reports from {start_date} to {end_date}", file=sys.stderr)
-
-    try:
-        all_reports = fetch_reports_for_clients(
+        all_apps = fetch_apps_for_clients(
             config, 
             clients, 
-            start_date,
-            end_date,
+            page_size, 
             target_client_no=args.client_no, 
-            target_client_name=args.client_name,
-            limit=args.limit,
-            random_select=args.random_select
+            target_client_name=args.client_name
         )
     except ApiError as e:
         print(f"API Error: {e}", file=sys.stderr)
@@ -360,18 +303,19 @@ def main() -> int:
         print(f"Unexpected error: {e}", file=sys.stderr)
         return 1
 
-    out_doc = build_output_document(config, bg, start_date, end_date, all_reports)
+    out_doc = build_output_document(config, bg, all_apps)
 
     # Determine output path
     if args.output:
         out_path = Path(args.output).expanduser().resolve()
     else:
+        # Save dynamically based on whether it's targeted or bulk
         project_root = Path(__file__).parent.parent.parent.parent  # up to Z7Z8/skills
         runtime_dir = project_root / "runtime" / "yingdao-boss"
         runtime_dir.mkdir(parents=True, exist_ok=True)
         
         if args.client_name:
-            out_path = runtime_dir / f"reports-{args.client_name}.json"
+            out_path = runtime_dir / f"apps-{args.client_name}.json"
         elif args.client_no:
             # Try to get actual name
             cname = args.client_no
@@ -379,21 +323,20 @@ def main() -> int:
                 if c.get("客户编号") == args.client_no:
                     cname = c.get("组织名称", args.client_no)
                     break
-            out_path = runtime_dir / f"reports-{cname}.json"
+            out_path = runtime_dir / f"apps-{cname}.json"
         else:
-            out_path = runtime_dir / "latest-reports.json"
+            out_path = runtime_dir / "latest-apps.json"
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(out_doc, f, indent=2, ensure_ascii=False)
-        print(f"Successfully saved {len(all_reports)} daily report records to {out_path}", file=sys.stderr)
+        print(f"Successfully saved {len(all_apps)} app records to {out_path}", file=sys.stderr)
     except Exception as e:
         print(f"Error writing output {out_path}: {e}", file=sys.stderr)
         return 1
 
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

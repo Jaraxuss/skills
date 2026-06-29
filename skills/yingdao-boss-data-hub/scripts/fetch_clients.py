@@ -17,7 +17,7 @@ try:
     from cryptography.hazmat.primitives.asymmetric import padding
 except ModuleNotFoundError as exc:
     print(
-        "Missing dependency: {}. Run `pip install -r skills/yingdao-boss-client-fetch/scripts/requirements.txt` first.".format(exc.name),
+        "Missing dependency: {}. Run `pip install -r skills/yingdao-boss-data-hub/scripts/requirements.txt` first.".format(exc.name),
         file=sys.stderr,
     )
     sys.exit(1)
@@ -25,7 +25,7 @@ except ModuleNotFoundError as exc:
 SCRIPT_DIR = Path(__file__).resolve().parent
 SKILL_DIR = SCRIPT_DIR.parent
 REPO_ROOT = SKILL_DIR.parent.parent
-DEFAULT_CONFIG_PATH = REPO_ROOT / "runtime" / "yingdao-boss-client-fetch" / "config.local.json"
+DEFAULT_CONFIG_PATH = REPO_ROOT / "runtime" / "yingdao-boss-data-hub" / "config.local.json"
 TEMPLATE_CONFIG_PATH = SKILL_DIR / "config.template.json"
 SHARED_RUNTIME_DIR = REPO_ROOT / "runtime" / "yingdao-boss"
 DEFAULT_LATEST_OUTPUT_PATH = SHARED_RUNTIME_DIR / "latest-clients.json"
@@ -86,7 +86,7 @@ def load_json(path: Path) -> dict[str, Any]:
         return json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
         raise SkillConfigError(
-            f"Config file not found: {path}. Copy {TEMPLATE_CONFIG_PATH.name} to runtime/yingdao-boss-client-fetch/config.local.json (or pass --config) and fill auth.username, auth.password, and defaults.default_business_group first."
+            f"Config file not found: {path}. Copy {TEMPLATE_CONFIG_PATH.name} to runtime/yingdao-boss-data-hub/config.local.json (or pass --config) and fill auth.username, auth.password, and defaults.default_business_group first."
         ) from exc
     except json.JSONDecodeError as exc:
         raise SkillConfigError(f"Invalid JSON in config file {path}: {exc}") from exc
@@ -374,7 +374,7 @@ def resolve_output_paths(config: dict[str, Any], config_path: Path, business_gro
 def build_output_document(config: dict[str, Any], fetch_result: dict[str, Any]) -> dict[str, Any]:
     fetched_at = datetime.now(timezone.utc).astimezone().isoformat()
     return {
-        "schema": "yingdao-boss-client-fetch.v1",
+        "schema": "yingdao-boss-data-hub.v1",
         "meta": {
             "fetched_at": fetched_at,
             "business_group": fetch_result["business_group"],

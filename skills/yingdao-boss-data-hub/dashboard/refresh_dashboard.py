@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 SCRIPT_DIR = Path(__file__).resolve().parent
 WORKSPACE_DIR = SCRIPT_DIR.parents[2]
 RUNTIME_DIR = WORKSPACE_DIR / "runtime" / "yingdao-boss"
-SKILL_DIR = WORKSPACE_DIR / "skills" / "yingdao-boss-client-fetch"
+SKILL_DIR = WORKSPACE_DIR / "skills" / "yingdao-boss-data-hub"
 
 
 @dataclass(frozen=True)
@@ -101,7 +101,7 @@ def main() -> int:
     tz = ZoneInfo(args.tz)
     today = date.fromisoformat(args.as_of) if args.as_of else datetime.now(tz).date()
 
-    reports_cmd = [sys.executable, "skills/yingdao-boss-client-fetch/scripts/fetch_tenant_reports.py"]
+    reports_cmd = [sys.executable, "skills/yingdao-boss-data-hub/scripts/fetch_tenant_reports.py"]
     if args.reports_start_date:
         reports_cmd.extend(["--start-date", args.reports_start_date])
     if args.reports_end_date:
@@ -111,17 +111,17 @@ def main() -> int:
         Step(
             label="fetch clients",
             output=RUNTIME_DIR / "latest-clients.json",
-            command=[sys.executable, "skills/yingdao-boss-client-fetch/scripts/fetch_clients.py"],
+            command=[sys.executable, "skills/yingdao-boss-data-hub/scripts/fetch_clients.py"],
         ),
         Step(
             label="fetch contracts",
             output=RUNTIME_DIR / "latest-contracts.json",
-            command=[sys.executable, "skills/yingdao-boss-client-fetch/scripts/fetch_contracts.py"],
+            command=[sys.executable, "skills/yingdao-boss-data-hub/scripts/fetch_contracts.py"],
         ),
         Step(
             label="analyze expiring orders",
             output=RUNTIME_DIR / "contracts-expiration-summary.json",
-            command=[sys.executable, "skills/yingdao-boss-client-fetch/scripts/analyze_expiring_orders.py"],
+            command=[sys.executable, "skills/yingdao-boss-data-hub/scripts/analyze_expiring_orders.py"],
         ),
         Step(
             label="fetch tenant reports",
@@ -136,7 +136,7 @@ def main() -> int:
 
     build_cmd = [
         sys.executable,
-        "skills/yingdao-boss-client-fetch/dashboard/build_data.py",
+        "skills/yingdao-boss-data-hub/dashboard/build_data.py",
         "--output",
         args.output,
     ]

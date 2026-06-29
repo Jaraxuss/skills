@@ -1,4 +1,4 @@
-# yingdao-boss-client-fetch
+# yingdao-boss-data-hub
 
 一个用于 **OpenClaw / Agent Skill** 的内部数据抓取技能。
 
@@ -53,7 +53,7 @@
 
 ```text
 skills/
-└── yingdao-boss-client-fetch/
+└── yingdao-boss-data-hub/
     ├── SKILL.md
     ├── README.md
     ├── config.template.json
@@ -81,7 +81,7 @@ skills/
 ### Python 依赖
 
 ```bash
-pip install -r skills/yingdao-boss-client-fetch/scripts/requirements.txt
+pip install -r skills/yingdao-boss-data-hub/scripts/requirements.txt
 ```
 
 依赖版本：
@@ -98,7 +98,7 @@ pip install -r skills/yingdao-boss-client-fetch/scripts/requirements.txt
 建议配置文件路径：
 
 ```text
-runtime/yingdao-boss-client-fetch/config.local.json
+runtime/yingdao-boss-data-hub/config.local.json
 ```
 
 必须填写以下字段：
@@ -193,7 +193,7 @@ runtime/yingdao-boss/latest-clients.json
 
 ```json
 {
-  "schema": "yingdao-boss-client-fetch.v1",
+  "schema": "yingdao-boss-data-hub.v1",
   "meta": {
     "fetched_at": "2026-03-09T21:56:39+08:00",
     "business_group": "江苏业务组",
@@ -224,31 +224,31 @@ runtime/yingdao-boss/latest-clients.json
 ### 10.1 使用默认配置抓取
 
 ```bash
-python3 skills/yingdao-boss-client-fetch/scripts/fetch_clients.py
+python3 skills/yingdao-boss-data-hub/scripts/fetch_clients.py
 ```
 
 ### 10.2 指定配置文件
 
 ```bash
-python3 skills/yingdao-boss-client-fetch/scripts/fetch_clients.py --config ./runtime/yingdao-boss-client-fetch/config.local.json
+python3 skills/yingdao-boss-data-hub/scripts/fetch_clients.py --config ./runtime/yingdao-boss-data-hub/config.local.json
 ```
 
 ### 10.3 临时指定业务组
 
 ```bash
-python3 skills/yingdao-boss-client-fetch/scripts/fetch_clients.py --business-group "江苏业务组"
+python3 skills/yingdao-boss-data-hub/scripts/fetch_clients.py --business-group "江苏业务组"
 ```
 
 ### 10.4 输出到自定义文件
 
 ```bash
-python3 skills/yingdao-boss-client-fetch/scripts/fetch_clients.py --output ./custom-output.json
+python3 skills/yingdao-boss-data-hub/scripts/fetch_clients.py --output ./custom-output.json
 ```
 
 ### 10.5 在默认 latest 模式下额外保存一次归档快照
 
 ```bash
-python3 skills/yingdao-boss-client-fetch/scripts/fetch_clients.py --archive
+python3 skills/yingdao-boss-data-hub/scripts/fetch_clients.py --archive
 ```
 
 ---
@@ -265,16 +265,16 @@ python3 skills/yingdao-boss-client-fetch/scripts/fetch_clients.py --archive
 
 ```bash
 # 导出1个或多个客户的看板数据（日期默认：昨天 endDate，倒推365天 startDate）
-python3 skills/yingdao-boss-client-fetch/scripts/export_dashboard.py \
+python3 skills/yingdao-boss-data-hub/scripts/export_dashboard.py \
   --client-names "南京***电子商务有限公司" "上海***电子商务有限公司"
 
 # 自定义输出目录
-python3 skills/yingdao-boss-client-fetch/scripts/export_dashboard.py \
+python3 skills/yingdao-boss-data-hub/scripts/export_dashboard.py \
   --client-names "江苏***药房连锁有限公司" \
   --output-dir ./runtime/yingdao-boss/exports
 
 # 手动指定结束日期（用于补历史数据）
-python3 skills/yingdao-boss-client-fetch/scripts/export_dashboard.py \
+python3 skills/yingdao-boss-data-hub/scripts/export_dashboard.py \
   --client-names "南京***电子商务有限公司" \
   --end-date 20260401
 ```
@@ -305,7 +305,7 @@ xlsx 默认保存到 `/tmp`（可通过 `--output-dir` 或 config 中 `export_da
 ### 12.1 文件职责
 
 ```text
-skills/yingdao-boss-client-fetch/dashboard/
+skills/yingdao-boss-data-hub/dashboard/
 ├── _template.html   # 看板源模板：页面结构、样式、分组规则、图表和表格逻辑
 ├── build_data.py    # 构建脚本：读取 JSON 数据并注入模板
 ├── refresh_dashboard.py # 编排脚本：今天已有 JSON 就跳过对应取数步骤
@@ -324,7 +324,7 @@ skills/yingdao-boss-client-fetch/dashboard/
 日常推荐直接运行：
 
 ```bash
-python3 skills/yingdao-boss-client-fetch/dashboard/refresh_dashboard.py
+python3 skills/yingdao-boss-data-hub/dashboard/refresh_dashboard.py
 ```
 
 它会检查以下文件是否已经是今天生成的（默认按 `Asia/Shanghai` 判断）：
@@ -339,38 +339,38 @@ python3 skills/yingdao-boss-client-fetch/dashboard/refresh_dashboard.py
 可先预览会执行哪些步骤：
 
 ```bash
-python3 skills/yingdao-boss-client-fetch/dashboard/refresh_dashboard.py --dry-run
+python3 skills/yingdao-boss-data-hub/dashboard/refresh_dashboard.py --dry-run
 ```
 
 如需强制重新拉取全部数据：
 
 ```bash
-python3 skills/yingdao-boss-client-fetch/dashboard/refresh_dashboard.py --force
+python3 skills/yingdao-boss-data-hub/dashboard/refresh_dashboard.py --force
 ```
 
 等价的完整手动刷新顺序如下：
 
 ```bash
 # 1. 刷新客户主数据，生成 runtime/yingdao-boss/latest-clients.json
-python3 skills/yingdao-boss-client-fetch/scripts/fetch_clients.py
+python3 skills/yingdao-boss-data-hub/scripts/fetch_clients.py
 
 # 2. 刷新合同数据，生成 runtime/yingdao-boss/latest-contracts.json
-python3 skills/yingdao-boss-client-fetch/scripts/fetch_contracts.py
+python3 skills/yingdao-boss-data-hub/scripts/fetch_contracts.py
 
 # 3. 分析合同到期情况，生成 runtime/yingdao-boss/contracts-expiration-summary.json
-python3 skills/yingdao-boss-client-fetch/scripts/analyze_expiring_orders.py
+python3 skills/yingdao-boss-data-hub/scripts/analyze_expiring_orders.py
 
 # 4. 刷新日报数据，生成 runtime/yingdao-boss/latest-reports.json
-python3 skills/yingdao-boss-client-fetch/scripts/fetch_tenant_reports.py
+python3 skills/yingdao-boss-data-hub/scripts/fetch_tenant_reports.py
 
 # 5. 生成静态客户成功行动看板
-python3 skills/yingdao-boss-client-fetch/dashboard/build_data.py
+python3 skills/yingdao-boss-data-hub/dashboard/build_data.py
 ```
 
 生成后打开：
 
 ```text
-skills/yingdao-boss-client-fetch/dashboard/dashboard.html
+skills/yingdao-boss-data-hub/dashboard/dashboard.html
 ```
 
 ### 12.3 构建脚本读取的数据
@@ -386,11 +386,11 @@ skills/yingdao-boss-client-fetch/dashboard/dashboard.html
 ### 12.4 自定义输入或输出
 
 ```bash
-python3 skills/yingdao-boss-client-fetch/dashboard/build_data.py \
+python3 skills/yingdao-boss-data-hub/dashboard/build_data.py \
   --input ./runtime/yingdao-boss/latest-reports.json \
   --clients-input ./runtime/yingdao-boss/latest-clients.json \
   --expiration-input ./runtime/yingdao-boss/contracts-expiration-summary.json \
-  --output ./skills/yingdao-boss-client-fetch/dashboard/dashboard.html
+  --output ./skills/yingdao-boss-data-hub/dashboard/dashboard.html
 ```
 
 ### 12.5 看板默认逻辑
@@ -479,7 +479,7 @@ CSM 诊断模式：
 
 ## 14. 总结
 
-`yingdao-boss-client-fetch` 的定位不是“分析 skill”，而是一个稳定的 **Boss 客户数据抓取 skill**。
+`yingdao-boss-data-hub` 的定位不是“分析 skill”，而是一个稳定的 **Boss 客户数据与运营数据 hub**。
 
 它的核心价值在于：
 

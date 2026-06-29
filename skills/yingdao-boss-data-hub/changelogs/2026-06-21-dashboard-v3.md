@@ -73,7 +73,7 @@ step-by-step action guidance, and any multi-file build splitting.
 Rebuild from the latest local JSON (no network fetch needed):
 
 ```bash
-python3 skills/yingdao-boss-client-fetch/dashboard/build_data.py
+python3 skills/yingdao-boss-data-hub/dashboard/build_data.py
 ```
 
 Verified on 2026-06-21 against existing runtime JSON (42 report clients):

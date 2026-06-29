@@ -197,7 +197,7 @@ def fetch_contracts_for_clients(config: dict[str, Any], clients: list[dict[str, 
 def build_output_document(config: dict[str, Any], bg: str, all_contracts: list[dict[str, Any]]) -> dict[str, Any]:
     fetched_at = datetime.now(timezone.utc).astimezone().isoformat()
     return {
-        "schema": "yingdao-boss-client-fetch-contracts.v1",
+        "schema": "yingdao-boss-data-hub-contracts.v1",
         "meta": {
             "fetched_at": fetched_at,
             "business_group": bg,
@@ -233,7 +233,7 @@ def main() -> int:
                 safe_name = "custom_client"
                 
             # output_dir should be <workspace_root>/runtime/yingdao-boss
-            # config_path is like .../skills/skills/yingdao-boss-client-fetch/config.local.json
+            # config_path is like .../skills/skills/yingdao-boss-data-hub/config.local.json
             output_dir = config_path.parent.parent.parent / "runtime" / "yingdao-boss"
             output_dir.mkdir(parents=True, exist_ok=True)
             
