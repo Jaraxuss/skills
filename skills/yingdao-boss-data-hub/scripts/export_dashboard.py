@@ -61,10 +61,15 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="Override endDate (format: YYYYMMDD). Defaults to yesterday.",
     )
+    parser.add_argument(
+        "--start-date",
+        default="",
+        help="Override startDate (format: YYYYMMDD). Defaults to endDate minus 365 days.",
+    )
     return parser.parse_args()
 
 
-def compute_date_range(end_date_str: str) -> tuple[str, str]:
+def compute_date_range(end_date_str: str, start_date_str: str = "") -> tuple[str, str]:
     if end_date_str:
         try:
             end_date = datetime.strptime(end_date_str, "%Y%m%d").date()
@@ -74,7 +79,15 @@ def compute_date_range(end_date_str: str) -> tuple[str, str]:
             ) from exc
     else:
         end_date = datetime.now().date() - timedelta(days=1)
-    start_date = end_date - timedelta(days=365)
+    if start_date_str:
+        try:
+            start_date = datetime.strptime(start_date_str, "%Y%m%d").date()
+        except ValueError as exc:
+            raise SkillConfigError(
+                f"Invalid --start-date format (expected YYYYMMDD): {start_date_str}"
+            ) from exc
+    else:
+        start_date = end_date - timedelta(days=365)
     return start_date.strftime("%Y%m%d"), end_date.strftime("%Y%m%d")
 
 
@@ -289,7 +302,7 @@ def main() -> int:
             args.output_dir or export_cfg.get("output_dir") or "/tmp"
         ).expanduser().resolve()
 
-        start_date, end_date = compute_date_range(args.end_date)
+        start_date, end_date = compute_date_range(args.end_date, args.start_date)
         print(f"Date range: {start_date} → {end_date}", file=sys.stderr)
 
         client_names: list[str] = args.client_names

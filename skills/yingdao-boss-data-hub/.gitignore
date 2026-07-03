@@ -35,6 +35,16 @@ archive/
 # Shared latest dataset
 latest-clients.json
 **/latest-clients.json
+latest-contracts.json
+**/latest-contracts.json
+latest-apps.json
+**/latest-apps.json
+latest-reports.json
+**/latest-reports.json
+
+# Generated dashboards may embed customer data
+dashboard/dashboard.html
+**/dashboard/dashboard.html
 
 # =========================
 # Build / package artifacts

@@ -24,6 +24,18 @@ from zoneinfo import ZoneInfo
 WORKSPACE_DIR = Path(__file__).resolve().parents[3]
 DEFAULT_CLIENTS = WORKSPACE_DIR / "runtime" / "yingdao-boss" / "latest-clients.json"
 DEFAULT_CONTRACT_SUMMARY = WORKSPACE_DIR / "runtime" / "yingdao-boss" / "contracts-expiration-summary.json"
+DEFAULT_APPS = WORKSPACE_DIR / "runtime" / "yingdao-boss" / "latest-apps.json"
+BOSS_ENTERPRISE_DETAIL_BASE = "https://boss.shadow-rpa.net/simple/manage/microApp/boss/busi/enterpriseDetail?organizationUuid="
+RUIXIANG_OLD_KEYS = {
+    "江苏瑞祥科技集团有限公司",
+    "20230722-021117",
+    "891c7f79-1856-4af4-b3cf-c4b49e05af5d",
+}
+RUIXIANG_GLOBAL_BUY = {
+    "name": "瑞祥全球购超市有限公司",
+    "custom_no": "20230116-017676",
+    "organization_uuid": "7c156ae7-7c00-40bb-9ff9-645acaf83443",
+}
 
 # 来自用户确认“效果正确”的样例卡片。当前作为稳定样式模板使用。
 DEFAULT_HEADER_IMG_KEY = "img_v3_0210v_67c70217-d281-4280-af53-0e26741af92g"
@@ -60,7 +72,83 @@ def customer_key(row: dict) -> str:
     )
 
 
+def is_ruixiang_old_subject(row: dict) -> bool:
+    values = {
+        str(row.get("组织名称") or ""),
+        str(row.get("客户编号") or ""),
+        str(row.get("组织UUID") or ""),
+    }
+    return bool(values & RUIXIANG_OLD_KEYS)
+
+
+def boss_url(organization_uuid: str | None) -> str:
+    if not organization_uuid:
+        return ""
+    return f"{BOSS_ENTERPRISE_DETAIL_BASE}{organization_uuid}"
+
+
+def boss_markdown_link(organization_uuid: str | None) -> str:
+    url = boss_url(organization_uuid)
+    return f"[点击跳转]({url})" if url else "暂无"
+
+
+def parse_history_names(row: dict) -> list[str]:
+    raw = row.get("历史名称")
+    if not raw:
+        return []
+    if isinstance(raw, list):
+        return [str(v) for v in raw if v]
+    try:
+        parsed = json.loads(str(raw))
+        if isinstance(parsed, list):
+            return [str(v) for v in parsed if v]
+    except Exception:
+        pass
+    return [str(raw)]
+
+
+def build_client_index(rows: list[dict]) -> dict[str, dict]:
+    index = {}
+    for row in rows:
+        keys = [
+            row.get("组织UUID"),
+            row.get("客户编号"),
+            row.get("组织名称"),
+            row.get("组织简称"),
+            *parse_history_names(row),
+        ]
+        for key in keys:
+            if key:
+                index.setdefault(str(key), row)
+    return index
+
+
+def find_client_row(item: dict, client_index: dict[str, dict]) -> dict | None:
+    for key in (
+        item.get("organization_uuid"),
+        item.get("custom_no"),
+        item.get("client_name"),
+    ):
+        if key and str(key) in client_index:
+            return client_index[str(key)]
+    return None
+
+
+def collect_ruixiang_global_buy_activity(apps_data: dict | None) -> dict[str, int]:
+    rows = (apps_data or {}).get("rows") or []
+    matched = [r for r in rows if r.get("_organizationUuid") == RUIXIANG_GLOBAL_BUY["organization_uuid"]]
+    return {
+        "app_count": len(matched),
+        "week_active_apps": sum(1 for r in matched if (to_float(r.get("weekRunCnt")) or 0) > 0),
+        "month_active_apps": sum(1 for r in matched if (to_float(r.get("monthRunCnt")) or 0) > 0),
+        "week_active_owners": len({r.get("ownerUuid") for r in matched if (to_float(r.get("weekRunCnt")) or 0) > 0 and r.get("ownerUuid")}),
+        "month_active_owners": len({r.get("ownerUuid") for r in matched if (to_float(r.get("monthRunCnt")) or 0) > 0 and r.get("ownerUuid")}),
+    }
+
+
 def customer_name(row: dict) -> str:
+    if is_ruixiang_old_subject(row):
+        return RUIXIANG_GLOBAL_BUY["name"]
     return (
         row.get("组织名称")
         or row.get("组织简称")
@@ -69,9 +157,16 @@ def customer_name(row: dict) -> str:
     )
 
 
-def pick_low_activity(rows: list[dict]) -> list[dict]:
+def organization_uuid(row: dict) -> str | None:
+    if is_ruixiang_old_subject(row):
+        return RUIXIANG_GLOBAL_BUY["organization_uuid"]
+    return row.get("组织UUID")
+
+
+def pick_low_activity(rows: list[dict], apps_data: dict | None = None) -> list[dict]:
     low_activity_candidates = []
     seen = set()
+    ruixiang_activity = collect_ruixiang_global_buy_activity(apps_data)
     sorted_rows = sorted(
         rows,
         key=lambda x: (
@@ -79,6 +174,8 @@ def pick_low_activity(rows: list[dict]) -> list[dict]:
         ),
     )
     for r in sorted_rows:
+        if is_ruixiang_old_subject(r) and ruixiang_activity.get("week_active_apps", 0) > 0:
+            continue
         stage = first(r.get("RPA服务阶段"))
         deploy = first(r.get("RPA部署类型"))
         coop = first(r.get("RPA合作状态"))
@@ -93,7 +190,7 @@ def pick_low_activity(rows: list[dict]) -> list[dict]:
             continue
         seen.add(key)
         low_activity_candidates.append(r)
-        if len(low_activity_candidates) >= 5:
+        if len(low_activity_candidates) >= 10:
             break
     return low_activity_candidates
 
@@ -133,9 +230,11 @@ def format_detail_lines(order_details: list[str]) -> str:
     return "\n".join(parts) if parts else "- 暂无；"
 
 
-def build_client_detail_markdown(item: dict) -> str:
+def build_client_detail_markdown(item: dict, client_index: dict[str, dict]) -> str:
     order_types = " / ".join(item.get("order_types", []) or []) or "未标注"
     details = format_detail_lines(item.get("order_details", []))
+    row = find_client_row(item, client_index)
+    link = boss_markdown_link(organization_uuid(row)) if row else boss_markdown_link(item.get("organization_uuid"))
     return "\n".join(
         [
             f"**{item.get('client_name', '(未命名客户)')}** | 剩余 {fmt_days(item.get('days_remaining'))} 天",
@@ -144,11 +243,12 @@ def build_client_detail_markdown(item: dict) -> str:
             f"金额：{fmt_amount(item.get('total_amount'))} | 类型：{order_types}",
             "详情：",
             details,
+            f"BOSS链接：{link}",
         ]
     )
 
 
-def build_bucket_column(title: str, title_color: str, background_style: str, items: list[dict]) -> dict:
+def build_bucket_column(title: str, title_color: str, background_style: str, items: list[dict], client_index: dict[str, dict]) -> dict:
     elements = [
         {"tag": "markdown", "content": f"**<font color='{title_color}'>{title}（{len(items)}家）</font>**"}
     ]
@@ -157,7 +257,7 @@ def build_bucket_column(title: str, title_color: str, background_style: str, ite
             elements.append(
                 {
                     "tag": "markdown",
-                    "content": build_client_detail_markdown(item),
+                    "content": build_client_detail_markdown(item, client_index),
                     "text_align": "left",
                     "text_size": "normal_v2",
                 }
@@ -225,6 +325,7 @@ def build_low_activity_table(rows: list[dict]) -> dict:
             },
             {"data_type": "text", "name": "service_stage", "display_name": "服务阶段", "horizontal_align": "right", "width": "auto"},
             {"data_type": "text", "name": "deploy_type", "display_name": "部署类型", "horizontal_align": "center", "width": "auto"},
+            {"data_type": "markdown", "name": "boss_link", "display_name": "BOSS链接", "horizontal_align": "center", "width": "auto"},
         ],
         "rows": [
             {
@@ -234,6 +335,7 @@ def build_low_activity_table(rows: list[dict]) -> dict:
                 "fifteen_active": to_int_like(r.get("近15天活跃账号数")),
                 "service_stage": first(r.get("RPA服务阶段")) or "未填写",
                 "deploy_type": first(r.get("RPA部署类型")) or "未填写",
+                "boss_link": boss_markdown_link(organization_uuid(r)),
             }
             for r in rows
         ],
@@ -245,9 +347,10 @@ def build_low_activity_table(rows: list[dict]) -> dict:
     }
 
 
-def build_card(clients_data: dict, contract_summary: dict, tz_name: str, as_of: date | None, header_img_key: str) -> dict:
+def build_card(clients_data: dict, contract_summary: dict, tz_name: str, as_of: date | None, header_img_key: str, apps_data: dict | None = None) -> dict:
     rows = clients_data.get("rows") or []
-    low_activity = pick_low_activity(rows)
+    low_activity = pick_low_activity(rows, apps_data=apps_data)
+    client_index = build_client_index(rows)
     now_date = as_of or datetime.now(ZoneInfo(tz_name)).date()
     client_meta = clients_data.get("meta") or {}
 
@@ -284,11 +387,11 @@ def build_card(clients_data: dict, contract_summary: dict, tz_name: str, as_of: 
                 },
                 {"tag": "markdown", "content": meta_md, "margin": "0px 0px 0px 0px", "element_id": "renewal-meta"},
                 {"tag": "markdown", "content": "### <font color='blue'>1）待续费客户</font>", "margin": "0px 0px 0px 0px", "element_id": "renewal-title"},
-                build_bucket_column("30天内", "blue", "blue-50", bucket_30),
-                build_bucket_column("31-60天", "violet", "purple-50", bucket_60),
+                build_bucket_column("30天内", "blue", "blue-50", bucket_30, client_index),
+                build_bucket_column("31-60天", "violet", "purple-50", bucket_60, client_index),
                 {
                     "tag": "markdown",
-                    "content": "### <font color='purple'>2）活跃低客户</font>\n> 筛选条件：按账号饱和度升序 Top 5；RPA服务阶段 ≠ 已流失/售前阶段；RPA合作状态 ≠ 已过期/已流失；RPA部署类型 = 公有云",
+                    "content": "### <font color='purple'>2）活跃低客户</font>\n> 筛选条件：按账号饱和度升序 Top 10；RPA服务阶段 ≠ 已流失/售前阶段；RPA合作状态 ≠ 已过期/已流失；RPA部署类型 = 公有云。江苏瑞祥科技集团有限公司按瑞祥全球购超市有限公司主体活跃数据处理。",
                     "margin": "0px 0px 0px 0px",
                     "element_id": "low-activity-title",
                 },
@@ -303,6 +406,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build Feishu card JSON for daily renewal/churn report")
     parser.add_argument("--clients", default=str(DEFAULT_CLIENTS), help="Path to latest-clients.json")
     parser.add_argument("--contracts-summary", default=str(DEFAULT_CONTRACT_SUMMARY), help="Path to contracts-expiration-summary.json")
+    parser.add_argument("--apps", default=str(DEFAULT_APPS), help="Optional path to latest-apps.json for customer subject aliases")
     parser.add_argument("--tz", default="Asia/Shanghai", help="Timezone for report date")
     parser.add_argument("--as-of", default="", help="Override analysis date (YYYY-MM-DD)")
     parser.add_argument("--header-img-key", default=DEFAULT_HEADER_IMG_KEY, help="Feishu image key for card header banner")
@@ -317,6 +421,8 @@ def main() -> int:
 
     clients_data = json.loads(clients_path.read_text(encoding="utf-8"))
     contract_summary = json.loads(contracts_path.read_text(encoding="utf-8"))
+    apps_path = Path(args.apps).expanduser().resolve() if args.apps else None
+    apps_data = json.loads(apps_path.read_text(encoding="utf-8")) if apps_path and apps_path.exists() else None
     as_of = date.fromisoformat(args.as_of) if args.as_of else None
 
     card = build_card(
@@ -325,6 +431,7 @@ def main() -> int:
         tz_name=args.tz,
         as_of=as_of,
         header_img_key=args.header_img_key,
+        apps_data=apps_data,
     )
     payload = json.dumps(card, ensure_ascii=False, indent=4)
 

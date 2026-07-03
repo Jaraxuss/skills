@@ -2,18 +2,17 @@
 """
 analyze_expiring_orders.py
 
-Reads the latest contracts JSON export and categorizes clients based on the maximum 
-expiration date (endDate) found within their MOST RECENT contract.
+Reads the latest contracts JSON export and categorizes clients based on the main
+subscription expiration date (endDate) found across renewal-cycle orders.
 Grouping: Expired, <= 30 Days, 31-60 Days, 61-90 Days, > 90 Days.
 """
 
 import argparse
 import json
-import os
 import sys
-from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 # Adjust path to find the default location if running from root relative
 SHARED_RUNTIME_DIR = Path(__file__).resolve().parent.parent.parent.parent / "runtime" / "yingdao-boss"
@@ -23,6 +22,7 @@ class ClientRecord:
     def __init__(self, custom_no, custom_name):
         self.custom_no = custom_no
         self.custom_name = custom_name
+        self.organization_uuid = None
         self.contracts = []
         self.max_end_date = None
         self.latest_contract_no = None
@@ -74,39 +74,50 @@ def main():
             continue
             
         custom_name = r.get("customIdExtra", {}).get("name", "Unknown Client")
+        organization_uuid = r.get("customIdExtra", {}).get("organizationUuid") or r.get("组织UUID")
         
         if custom_no not in clients_map:
             clients_map[custom_no] = ClientRecord(custom_no, custom_name)
+
+        if organization_uuid and not clients_map[custom_no].organization_uuid:
+            clients_map[custom_no].organization_uuid = organization_uuid
             
         clients_map[custom_no].contracts.append(r)
 
-    # 2. Extract Max End Date from the MOST RECENT contract per client
+    # 2. Extract the main subscription expiration date per client.
     clients_with_valid_dates = []
     
     for custom_no, record in clients_map.items():
-        # Find latest contract based on createTime
-        valid_contracts = [c for c in record.contracts if c.get("createTime")]
-        if not valid_contracts:
+        renewal_orders = []
+        for contract in record.contracts:
+            contract_no = contract.get("contractNo", "Unknown")
+            contract_create_time = get_datetime(contract.get("createTime")) or datetime.min
+            for order in contract.get("contractOrderDTOList2", []) or []:
+                order_type = order.get("orderType")
+                if order_type not in ("new", "renew"):
+                    continue
+
+                end_date_dt = get_datetime(order.get("endDate"))
+                if not end_date_dt:
+                    continue
+
+                renewal_orders.append((end_date_dt, contract_create_time, contract_no, order))
+
+        if not renewal_orders:
             continue
-            
-        latest_contract = max(valid_contracts, key=lambda c: get_datetime(c["createTime"]) or datetime.min)
-        record.latest_contract_no = latest_contract.get("contractNo", "Unknown")
-        
-        # Check orders inside latest contract
-        orders = latest_contract.get("contractOrderDTOList2", [])
+
+        max_end_date = max(order[0] for order in renewal_orders)
+        current_cycle_orders = [order for order in renewal_orders if order[0] == max_end_date]
+
         end_dates = []
         start_dates = []
         total_amount = 0.0
         order_types_set = set()
         order_details = []
+        contract_nos = set()
         
-        for o in orders:
-            # We only track expiration dates for subscription-like order types
+        for end_date_dt, _contract_create_time, contract_no, o in current_cycle_orders:
             order_type = o.get("orderType")
-            if order_type not in ("new", "renew", "add"):
-                continue
-            
-            end_date_dt = get_datetime(o.get("endDate"))
             start_date_dt = get_datetime(o.get("startDate"))
             if end_date_dt:
                 end_dates.append(end_date_dt)
@@ -114,8 +125,9 @@ def main():
                 start_dates.append(start_date_dt)
                 
             total_amount += float(o.get("actualAmount") or 0.0)
+            contract_nos.add(contract_no)
             
-            type_mapping = {"new": "新购/新签", "renew": "续费", "add": "增购"}
+            type_mapping = {"new": "新购/新签", "renew": "续费"}
             mapped_type = type_mapping.get(order_type, order_type)
             if mapped_type:
                 order_types_set.add(mapped_type)
@@ -130,11 +142,12 @@ def main():
             record.total_amount = total_amount
             record.order_types = list(order_types_set)
             record.order_details = order_details
+            record.latest_contract_no = "、".join(sorted(contract_nos)) if contract_nos else "Unknown"
             
             clients_with_valid_dates.append(record)
 
     # 3. Categorize and bucket
-    today = datetime.now()
+    today = datetime.now(ZoneInfo("Asia/Shanghai")).date()
     
     categories = {
         "Expired (已过期)": [],
@@ -143,7 +156,7 @@ def main():
     }
     
     for rec in clients_with_valid_dates:
-        days_diff = (rec.max_end_date - today).days
+        days_diff = (rec.max_end_date.date() - today).days
         
         if -30 <= days_diff < 0:
             categories["Expired (已过期)"].append((days_diff, rec))
@@ -199,6 +212,8 @@ def main():
             
             cat_array.append({
                 "client_name": rec.custom_name,
+                "custom_no": rec.custom_no,
+                "organization_uuid": rec.organization_uuid,
                 "latest_contract_no": rec.latest_contract_no,
                 "min_start_date": start_date_str,
                 "max_end_date": end_date_str,
