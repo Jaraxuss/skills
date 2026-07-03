@@ -1,0 +1,125 @@
+{
+  "logo_path": "assets/yingdao_logo.png",
+  "footer": "From human doing to human being.",
+  "slides": [
+    {
+      "type": "cover",
+      "eyebrow": "客户培训 · 2小时",
+      "title": "影刀 RPA 进阶：\nPython 数据处理库在 Excel 自动化中的应用",
+      "subtitle": "以 Pandas 为核心，应对复杂供应链数据，打通自动化闭环",
+      "meta": "面向：合肥联宝供应链部门业务人员",
+      "speaker_notes": "给演讲者的备注：\n1. 暖场，回顾基础培训中的收获。\n2. 引入进阶课程目标：解决业务侧在处理大规模、多维度供应链数据时的痛点。"
+    },
+    {
+      "type": "table",
+      "title": "课程地图",
+      "subtitle": "围绕供应链案例，理解进阶数据处理方法",
+      "headers": ["章节", "模块", "业务落点"],
+      "rows": [
+        ["01", "核心定位", "影刀 + Python 分工，解决复杂流程卡点"],
+        ["02", "数据清洗", "把原始物料报表整理成标准数据"],
+        ["03", "多表匹配", "交期主数据与BOM表的自动化关联"],
+        ["04", "汇总与分析", "按供应商维度自动生成呆滞物料分析报表"],
+        ["05", "流程闭环", "Python 处理结果无缝接回影刀触发后续动作"]
+      ],
+      "col_widths": [1, 2, 5],
+      "footer_note": "从业务问题出发，看到数据处理结果。"
+    },
+    {
+      "type": "cards",
+      "title": "影刀与 Python 的协同分工",
+      "subtitle": "影刀负责跑通链路，Python 负责复杂数据治理",
+      "cards": [
+        {
+          "title": "影刀（RPA 工具）",
+          "body": "系统自动登录\n报表下载与上传\n触发邮件或消息通知\n跨系统搬运数据"
+        },
+        {
+          "title": "Python（数据中枢）",
+          "body": "百万级行数据极速清洗\n多维度复杂匹配（如 VLOOKUP）\n异常值与空值智能处理\n多维度透视与聚合"
+        },
+        {
+          "title": "联合业务价值",
+          "body": "减少冗长拖拽指令\n大幅提升运行速度与稳定性\n规则清晰，维护成本低"
+        }
+      ],
+      "bottom_note": "帮助业务与 IT 对齐规则、字段和输出结果，避免由于单一工具限制导致的流程脆弱。"
+    },
+    {
+      "type": "code_case",
+      "title": "案例 1：供应链原始数据清洗",
+      "subtitle": "解决系统导出报表格式混乱的问题，为后续处理打底",
+      "cards": [
+        {
+          "title": "业务问题",
+          "body": "系统导出的订单数据包含大量空行、重复行，数字格式不统一。"
+        },
+        {
+          "title": "处理动作",
+          "body": "一键去重、删除关键字段空值，统一交期格式与物料编码文本格式。"
+        }
+      ],
+      "code": "import pandas as pd\n\n# 读取系统原始导出表\ndf = pd.read_excel(\"原始订单数据.xlsx\")\n\n# 去除重复行与缺失物料的无效行\ndf = df.drop_duplicates()\ndf = df.dropna(subset=[\"物料编码\"])\n\n# 统一格式处理\ndf[\"物料编码\"] = df[\"物料编码\"].astype(str).str.strip()\ndf[\"交期\"] = pd.to_datetime(df[\"交期\"], errors=\"coerce\")\n\n# 输出标准化表格\ndf.to_excel(\"标准订单数据.xlsx\", index=False)",
+      "flow": ["影刀导出 ERP 报表", "Python 快速清洗", "生成标准 Excel"]
+    },
+    {
+      "type": "code_case",
+      "title": "案例 2：多维度 BOM 与主数据匹配",
+      "subtitle": "跨表关联（类似 VLOOKUP），快速补齐业务信息",
+      "cards": [
+        {
+          "title": "业务问题",
+          "body": "需要将采购计划表与供应商主数据、价格表进行快速比对和关联。"
+        },
+        {
+          "title": "处理动作",
+          "body": "根据唯一主键（如物料编码或供应商ID），自动将多张表的数据拼接到一起。"
+        }
+      ],
+      "code": "import pandas as pd\n\n# 读取采购计划与主数据\nplan_df = pd.read_excel(\"本周采购计划.xlsx\")\nmaster_df = pd.read_excel(\"供应商主数据.xlsx\")\n\n# 多表精准匹配 (类似 VLOOKUP)\n# 根据 '供应商ID' 字段补齐 '供应商名称' 和 '账期'\nresult_df = pd.merge(plan_df, master_df, on=\"供应商ID\", how=\"left\")\n\n# 输出关联后的完整数据表\nresult_df.to_excel(\"完整采购计划表.xlsx\", index=False)",
+      "flow": ["读取多个孤立表格", "Python 智能拼接", "输出一张全景表"]
+    },
+    {
+      "type": "code_case",
+      "title": "案例 3：自动生成多维度汇总报表",
+      "subtitle": "从明细数据自动提炼出业务高管需要的看板数据",
+      "cards": [
+        {
+          "title": "业务问题",
+          "body": "每月需统计各供应商的交货准时率及呆滞物料金额，手工计算耗时易错。"
+        },
+        {
+          "title": "处理动作",
+          "body": "按指定维度（如供应商、物料分类）自动进行透视求和与计算。"
+        }
+      ],
+      "code": "import pandas as pd\n\ndf = pd.read_excel(\"完整采购计划表.xlsx\")\n\n# 按供应商维度汇总金额和数量\nsummary = df.groupby(\"供应商名称\").agg({\n    \"采购金额\": \"sum\",\n    \"采购数量\": \"sum\"\n}).reset_index()\n\n# 按金额从高到低排序\nsummary = summary.sort_values(by=\"采购金额\", ascending=False)\n\n# 写入最终的汇报材料\nsummary.to_excel(\"供应商月度汇总.xlsx\", index=False)",
+      "flow": ["输入明细数据", "Python 分组透视", "输出管理层汇报表"]
+    },
+    {
+      "type": "process",
+      "title": "完整业务链路：自动化闭环",
+      "subtitle": "数据处理不孤立，与影刀流程紧密衔接，完成端到端自动化",
+      "steps": ["ERP 报表下载", "Python 多表清洗与关联", "生成异常数据列表", "按供应商拆分 Excel", "影刀读取并分发邮件"],
+      "notes": [
+        {
+          "title": "影刀触发段",
+          "body": "每日定时运行，自动登录业务系统导出前一日明细。"
+        },
+        {
+          "title": "Python 处理核心",
+          "body": "承接导出的文件，执行上述所有的清洗、匹配、汇总和异常识别，并生成各部门所需的最终结果文件。"
+        },
+        {
+          "title": "影刀收尾段",
+          "body": "读取 Python 处理完的拆分文件与异常清单，自动调用飞书/邮件接口发送给对应负责人进行干预。"
+        }
+      ]
+    },
+    {
+      "type": "qa",
+      "statement": "影刀与 Python 强强联手：\n让复杂的供应链数据处理更简单，让自动化的边界更宽广。",
+      "note": "欢迎大家讨论真实场景卡点！"
+    }
+  ]
+}

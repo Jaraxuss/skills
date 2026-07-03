@@ -1,0 +1,217 @@
+{
+  "logo_path": "assets/yingdao_logo.png",
+  "footer": "From human doing to human being.",
+  "slides": [
+    {
+      "type": "cover",
+      "eyebrow": "客户培训 · 2小时",
+      "title": "影刀 RPA 进阶：\nPython 数据处理库在 Excel 自动化中的应用",
+      "subtitle": "围绕供应链 Excel 场景，理解复杂数据处理如何接入自动化流程",
+      "meta": "客户对象：合肥联宝供应链部门 · 面向业务人员"
+    },
+    {
+      "type": "statement",
+      "section": "课程主线",
+      "statement": "影刀负责把流程跑通；\nPython 负责把复杂数据处理干净。",
+      "note": "从业务问题出发，看到数据处理结果，再接回自动化闭环。"
+    },
+    {
+      "type": "table",
+      "title": "课程地图",
+      "subtitle": "围绕供应链案例，理解进阶数据处理方法",
+      "headers": ["模块", "核心内容", "业务落点"],
+      "rows": [
+        ["01", "能力定位", "判断什么场景用影刀，什么场景交给 Python"],
+        ["02", "数据映射", "理解 Excel 行列字段与 Python 数据对象的关系"],
+        ["03", "Pandas 基础", "读取、筛选、新增列、缺失值处理、输出 Excel"],
+        ["04", "业务案例", "清洗、多表匹配、异常筛选、分组汇总、格式转换"],
+        ["05", "流程闭环", "把 Python 输出结果接回影刀，继续通知、归档和分发"]
+      ],
+      "col_widths": [1.1, 2.4, 4.5],
+      "footer_note": "每个模块都对应一个可落地的供应链 Excel 处理场景。"
+    },
+    {
+      "type": "cards",
+      "title": "为什么需要 Python 数据处理能力",
+      "subtitle": "当数据规则变复杂，自动化需要更稳定的数据处理核心",
+      "cards": [
+        {
+          "title": "数据量变大",
+          "body": "订单、BOM、供应商、库存等明细表持续增长\n单纯依靠逐格操作效率下降\n批量处理需要更稳定的执行方式"
+        },
+        {
+          "title": "规则更复杂",
+          "body": "多表关联、异常条件、字段转换、汇总口径不断叠加\n复杂逻辑需要清晰表达和复用\n规则变更后更容易维护"
+        },
+        {
+          "title": "结果要闭环",
+          "body": "处理结果不仅要生成 Excel\n还要继续通知责任人、归档文件、触发后续流程\n数据处理必须能接回影刀自动化链路"
+        }
+      ],
+      "bottom_note": "Python 不是替代影刀，而是补强复杂数据处理这一段能力。"
+    },
+    {
+      "type": "cards",
+      "title": "影刀与 Python 的协同分工",
+      "subtitle": "流程编排与数据处理各司其职",
+      "cards": [
+        {
+          "title": "影刀负责流程",
+          "body": "系统登录与页面操作\n文件下载与上传\n任务调度与异常分支\n消息通知与结果归档"
+        },
+        {
+          "title": "Python 负责数据",
+          "body": "批量读取 Excel\n清洗字段与格式\n多表关联与条件筛选\n统计汇总与结果输出"
+        },
+        {
+          "title": "联合后的价值",
+          "body": "流程更短\n处理更快\n规则更清晰\n结果可追踪\n后续维护成本更低"
+        }
+      ],
+      "bottom_note": "业务与 IT 可以围绕字段、规则和输出结果形成统一口径。"
+    },
+    {
+      "type": "table",
+      "title": "Excel 数据与 Python 数据对象的关系",
+      "subtitle": "先建立业务人员容易理解的数据映射",
+      "headers": ["Excel 视角", "Python / Pandas 视角", "供应链场景举例"],
+      "rows": [
+        ["工作簿", "多个数据表文件", "采购计划、供应商主数据、库存台账"],
+        ["工作表", "DataFrame", "一张可批量处理的明细数据表"],
+        ["列 / 字段", "字段名 / Series", "物料编码、供应商、交期、数量、金额"],
+        ["行 / 记录", "一条业务明细", "一笔订单、一条库存、一条异常记录"],
+        ["公式 / 筛选", "计算列 / 条件过滤", "逾期判断、金额计算、异常筛选"]
+      ],
+      "col_widths": [1.6, 2.4, 4.0],
+      "footer_note": "理解映射关系后，复杂 Excel 处理可以转化为清晰的数据规则。"
+    },
+    {
+      "type": "code_case",
+      "title": "案例 1：批量清洗 Excel 数据",
+      "subtitle": "把原始报表整理成标准数据，便于后续自动处理",
+      "cards": [
+        {
+          "title": "业务问题",
+          "body": "系统导出的订单报表存在空行、重复行、字段格式不统一，后续匹配与统计容易出错。"
+        },
+        {
+          "title": "处理结果",
+          "body": "自动去重、删除关键字段为空的记录，统一物料编码和交期格式，输出标准 Excel。"
+        }
+      ],
+      "code": "import pandas as pd\n\ndf = pd.read_excel(\"原始订单数据.xlsx\")\ndf = df.drop_duplicates()\ndf = df.dropna(subset=[\"物料编码\"])\n\ndf[\"物料编码\"] = df[\"物料编码\"].astype(str).str.strip()\ndf[\"交期\"] = pd.to_datetime(df[\"交期\"], errors=\"coerce\")\n\ndf.to_excel(\"标准订单数据.xlsx\", index=False)",
+      "flow": ["影刀导出报表", "Python 清洗", "影刀读取结果"]
+    },
+    {
+      "type": "code_case",
+      "title": "案例 2：多表匹配与信息补齐",
+      "subtitle": "用 Pandas merge 替代复杂手工 VLOOKUP",
+      "cards": [
+        {
+          "title": "业务问题",
+          "body": "采购计划需要关联供应商主数据、账期、物料分类等信息，手工匹配耗时且易漏。"
+        },
+        {
+          "title": "处理结果",
+          "body": "基于供应商 ID 或物料编码自动关联多张表，输出一张字段完整的业务明细表。"
+        }
+      ],
+      "code": "import pandas as pd\n\nplan_df = pd.read_excel(\"本周采购计划.xlsx\")\nmaster_df = pd.read_excel(\"供应商主数据.xlsx\")\n\nresult_df = pd.merge(\n    plan_df,\n    master_df,\n    on=\"供应商ID\",\n    how=\"left\"\n)\n\nresult_df.to_excel(\"完整采购计划表.xlsx\", index=False)",
+      "flow": ["读取多张表", "按主键匹配", "输出完整明细"]
+    },
+    {
+      "type": "code_case",
+      "title": "案例 3：多条件筛选异常数据",
+      "subtitle": "把业务判断规则沉淀成可重复执行的数据条件",
+      "cards": [
+        {
+          "title": "业务问题",
+          "body": "需要快速识别交期逾期、库存不足、金额异常等记录，人工筛选容易受口径影响。"
+        },
+        {
+          "title": "处理结果",
+          "body": "把异常条件写成清晰规则，自动筛选异常清单，交给影刀继续通知负责人。"
+        }
+      ],
+      "code": "import pandas as pd\n\norders = pd.read_excel(\"采购订单明细.xlsx\")\norders[\"交期\"] = pd.to_datetime(orders[\"交期\"])\n\nabnormal = orders[\n    (orders[\"交期\"] < pd.Timestamp.today()) &\n    (orders[\"未交数量\"] > 0)\n]\n\nabnormal.to_excel(\"逾期未交清单.xlsx\", index=False)",
+      "flow": ["读取订单明细", "筛选异常记录", "发送责任人"]
+    },
+    {
+      "type": "code_case",
+      "title": "案例 4：分组汇总与报表统计",
+      "subtitle": "从明细数据自动生成管理层关注的统计结果",
+      "cards": [
+        {
+          "title": "业务问题",
+          "body": "每周需要按供应商、物料类别或责任部门统计金额、数量、异常记录数。"
+        },
+        {
+          "title": "处理结果",
+          "body": "按指定维度自动汇总，生成可复用的统计表，减少重复透视表操作。"
+        }
+      ],
+      "code": "import pandas as pd\n\ndf = pd.read_excel(\"完整采购计划表.xlsx\")\n\nsummary = df.groupby(\"供应商名称\").agg({\n    \"采购金额\": \"sum\",\n    \"采购数量\": \"sum\",\n    \"订单号\": \"count\"\n}).reset_index()\n\nsummary.to_excel(\"供应商周度汇总.xlsx\", index=False)",
+      "flow": ["输入明细数据", "按维度汇总", "输出统计报表"]
+    },
+    {
+      "type": "table",
+      "title": "典型场景判断：什么交给影刀，什么交给 Python",
+      "subtitle": "围绕任务特点选择合适能力，避免流程复杂度失控",
+      "headers": ["任务类型", "更适合影刀", "更适合 Python"],
+      "rows": [
+        ["系统操作", "登录、点击、下载、上传、发送消息", "不直接处理页面操作"],
+        ["简单 Excel", "复制粘贴、固定单元格、少量格式调整", "可处理但不是必要选择"],
+        ["复杂清洗", "触发流程并读取结果", "去重、缺失值、日期、编码、金额格式"],
+        ["多表关联", "准备输入文件并分发结果", "多表 merge、主键匹配、字段补齐"],
+        ["统计报表", "定时运行和通知", "分组汇总、排序、拆分、输出多份文件"]
+      ],
+      "col_widths": [1.4, 3.0, 3.6],
+      "footer_note": "判断标准不是工具名称，而是任务到底是流程动作还是数据规则。"
+    },
+    {
+      "type": "process",
+      "title": "完整业务链路：从报表到闭环",
+      "subtitle": "Python 处理结果可以无缝接回影刀，形成端到端自动化",
+      "steps": ["系统报表下载", "Python 数据处理", "生成结果文件", "影刀读取结果", "通知与归档"],
+      "notes": [
+        {
+          "title": "流程触发",
+          "body": "影刀按计划登录业务系统，下载采购、库存、供应商等原始数据。"
+        },
+        {
+          "title": "数据处理",
+          "body": "Python 执行清洗、匹配、筛选、汇总和格式转换，输出标准结果。"
+        },
+        {
+          "title": "业务闭环",
+          "body": "影刀读取结果文件，按规则通知责任人，并把过程文件归档留痕。"
+        }
+      ]
+    },
+    {
+      "type": "cards",
+      "title": "培训后的落地建议",
+      "subtitle": "把真实业务场景转化为可自动执行的数据规则",
+      "cards": [
+        {
+          "title": "先选高频场景",
+          "body": "优先选择每周、每日重复发生的报表处理任务\n从一类文件、一套规则、一个输出结果开始"
+        },
+        {
+          "title": "再梳理字段规则",
+          "body": "明确输入表、关键字段、匹配主键、异常判断、输出模板\n规则清楚后，自动化才稳定"
+        },
+        {
+          "title": "最后接入流程",
+          "body": "用影刀完成触发、文件流转、消息通知和归档\n让数据处理成为完整流程的一部分"
+        }
+      ],
+      "bottom_note": "一个成熟自动化场景，通常同时包含流程动作、数据规则和业务闭环。"
+    },
+    {
+      "type": "qa",
+      "statement": "让复杂数据处理变简单，\n让供应链自动化链路更稳定。",
+      "note": "Q&A · 欢迎结合真实 Excel 场景讨论"
+    }
+  ]
+}

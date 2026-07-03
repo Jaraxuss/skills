@@ -146,3 +146,21 @@ runtime
 .vscode/
 .workbuddy/
 skills/yingdao-boss-data-hub/dashboard/dashboard.html
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# OS-generated files
+.DS_Store
+
+# Output presentations (bloat prevention)
+*.pptx
+
+# Temporary files
+slides_content.txt
+read_ppt.py
+add_notes_to_ppt.py
+
+outputs/

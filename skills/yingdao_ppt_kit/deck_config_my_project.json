@@ -1,0 +1,21 @@
+{
+    "title": "测试演示幻灯片",
+    "subtitle": "快速演示自动生成 PPT 能力",
+    "meta": "面向：所有用户",
+    "slides": [
+        {
+            "type": "cover",
+            "eyebrow": "内部演示 · 5分钟",
+            "title": "自动生成 PPT 测试",
+            "subtitle": "展示两页内容",
+            "meta": "日期：今天",
+            "speaker_notes": "欢迎大家来看演示。"
+        },
+        {
+            "type": "qa",
+            "statement": "影刀可以极大提升效率；\nAI可以帮助快速生成内容。",
+            "note": "结论",
+            "speaker_notes": "这是第二页的备注。"
+        }
+    ]
+}

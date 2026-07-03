@@ -1,0 +1,95 @@
+{
+  "logo_path": "assets/yingdao_logo.png",
+  "footer": "From human doing to human being.",
+  "slides": [
+    {
+      "type": "cover",
+      "eyebrow": "客户培训 · 2小时",
+      "title": "影刀 RPA 进阶\nPython 数据处理库在\nExcel 自动化中的应用",
+      "subtitle": "以 Pandas 为核心，处理复杂 Excel 数据并接回影刀流程。",
+      "meta": "面向：合肥联*供应链部门业务人员",
+      "speaker_notes": "给演讲者的备注：\n1. 暖场与自我介绍，了解听众的影刀使用经验。\n2. 解释本次课程重点在 Python Pandas，属于进阶课程，非零基础影刀操作。\n3. 摆正听众预期：主要解决由于指令拖拽过长、过于复杂导致的难以维护问题。"
+    },
+    {
+      "type": "table",
+      "title": "课程地图",
+      "subtitle": "围绕供应链案例，理解进阶数据处理方法",
+      "headers": ["章节", "模块", "业务落点"],
+      "rows": [
+        ["01", "定位", "影刀 + Python 的分工边界"],
+        ["02", "基础映射", "Python 数据结构与 Excel 行列字段的关系"],
+        ["03", "Pandas 基础", "读取、查看、筛选、新增列、缺失值、输出"],
+        ["04", "业务案例", "清洗 / 匹配 / 异常 / 汇总 / 格式转换"],
+        ["05", "流程接回", "Python 输出结果如何交给影刀继续执行"]
+      ],
+      "col_widths": [1, 2, 5],
+      "footer_note": "每个案例都展示：业务问题 → 数据处理 → 流程接回影刀。"
+    },
+    {
+      "type": "cards",
+      "title": "影刀与 Python 的分工",
+      "subtitle": "影刀跑流程，Python 处理复杂数据",
+      "cards": [
+        {
+          "title": "影刀负责流程",
+          "body": "系统操作\n文件下载 / 上传\n邮件 / 消息通知\n调度与归档\n异常分支处理"
+        },
+        {
+          "title": "Python 负责数据",
+          "body": "批量清洗\n多表匹配\n多条件筛选\n分组汇总\n字段拆分与转换"
+        },
+        {
+          "title": "组合价值",
+          "body": "流程更短\n处理更稳\n规则更清晰\n结果可追踪\n便于后续维护"
+        }
+      ],
+      "bottom_note": "当拖拽指令变得很长、很慢、很难维护时，可以考虑让 Pandas 接手数据处理。"
+    },
+    {
+      "type": "code_case",
+      "title": "案例：批量清洗 Excel 数据",
+      "subtitle": "把原始报表整理成标准数据，便于后续自动处理",
+      "cards": [
+        {
+          "title": "业务问题",
+          "body": "空行、重复、空格、日期混乱、数字被识别为文本。"
+        },
+        {
+          "title": "处理动作",
+          "body": "去重、删关键空值、去空格、日期 and 数字格式统一。"
+        },
+        {
+          "title": "输出结果",
+          "body": "生成清洗后的标准 Excel，供影刀后续读取。"
+        }
+      ],
+      "code": "import pandas as pd\n\ndf = pd.read_excel(\"订单数据.xlsx\")\ndf = df.drop_duplicates()\ndf = df.dropna(subset=[\"物料编码\"])\n\ndf[\"物料编码\"] = df[\"物料编码\"].astype(str).str.strip()\ndf[\"下单日期\"] = pd.to_datetime(df[\"下单日期\"], errors=\"coerce\")\ndf[\"计划数量\"] = pd.to_numeric(df[\"计划数量\"], errors=\"coerce\")\n\ndf.to_excel(\"订单数据_清洗后.xlsx\", index=False)",
+      "flow": ["影刀下载报表", "Python 清洗", "影刀读取结果", "通知 / 归档"]
+    },
+    {
+      "type": "process",
+      "title": "完整业务链路",
+      "subtitle": "从原始报表到自动提醒",
+      "steps": ["下载报表", "清洗字段", "匹配主数据", "筛选异常", "发送提醒"],
+      "notes": [
+        {
+          "title": "Python 处理段",
+          "body": "标准化 → 匹配 → 计算 → 筛选 → 输出 Excel。"
+        },
+        {
+          "title": "影刀流程段",
+          "body": "获取来源、触发脚本、读取结果、通知、归档。"
+        },
+        {
+          "title": "业务价值",
+          "body": "复杂数据处理可复用，异常结果可追踪。"
+        }
+      ]
+    },
+    {
+      "type": "qa",
+      "statement": "影刀负责把流程跑通；\nPython 负责把复杂数据处理干净。",
+      "note": "Q&A"
+    }
+  ]
+}
