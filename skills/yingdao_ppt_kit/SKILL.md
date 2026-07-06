@@ -1,6 +1,6 @@
 ---
 name: yingdao-ppt-kit
-description: Create high-quality Yingdao-style customer-facing PowerPoint decks from Markdown creative briefs, using AI-led slide planning, visual judgment, assets, rendering, and QA instead of fixed script templates. Use when Codex needs to make customer training, sales, delivery, project recap, or scenario co-creation PPTs for Yingdao/RPA topics, especially when the user provides Markdown source material, asks for a brief.md workflow, wants AI-led aesthetics, references Yingdao-style PPTs, or wants to avoid repetitive JSON/python-pptx output. / 基于 Markdown 创意简报生成高质量影刀风格对客 PPT，通过 AI 逐页规划版式、视觉资产、信息密度、渲染和 QA，而不是套固定脚本模板。适用于影刀/RPA 相关的客户培训、售前汇报、交付复盘、项目总结和场景共创材料，尤其是用户提供 Markdown 资料、要求 brief.md 工作流、希望 AI 做审美判断、参考影刀风格样张，或明确不想要重复的 JSON/python-pptx 脚本产物时。
+description: Create high-quality Yingdao-style customer-facing PowerPoint decks from Markdown creative briefs, using structured slide plans, AI-led visual judgment, Yingdao visual assets, optional sample-slide gates, rendering, and QA instead of fixed script templates. Use when Codex needs to make customer training, sales, delivery, project recap, or scenario co-creation PPTs for Yingdao/RPA topics, especially when the user provides Markdown source material, asks for a brief.md workflow, wants AI-led aesthetics, references Yingdao-style PPTs, or wants to avoid repetitive JSON/python-pptx output. / 基于 Markdown 创意简报生成高质量影刀风格对客 PPT，通过结构化 slide plan、AI 逐页规划版式、影刀视觉资产、可选样张 gate、渲染和 QA，而不是套固定脚本模板。适用于影刀/RPA 相关的客户培训、售前汇报、交付复盘、项目总结和场景共创材料，尤其是用户提供 Markdown 资料、要求 brief.md 工作流、希望 AI 做审美判断、参考影刀风格样张，或明确不想要重复的 JSON/python-pptx 脚本产物时。
 ---
 
 # Yingdao PPT Kit
@@ -31,18 +31,22 @@ Typical triggers:
    - `references/customer-copy.md` for customer-facing wording rules.
    - `references/qa-checklist.md` before final delivery.
 3. 使用系统 `presentations` skill 创建 PowerPoint，并遵守其当前要求，包括 `artifact-tool`、rendered slide inspection 和 QA。
-4. 先输出内部 slide plan，再开始制作。每页都要明确：
-   - 页面目标：cover、chapter、case、process、comparison、table、code、summary 等。
-   - layout family：图文页、流程页、矩阵页、案例页、代码页、信息图等。
-   - visual asset：logo、截图、生成图片、业务流程图、表格或图标。
-   - information density：客户现场可读，不要把讲稿塞进页面。
-   - speaker notes：只放讲解辅助，不把内部提示写到画面上。
+4. 先输出内部 structured slide plan，再开始制作。每页都要明确：
+   - `role`：cover、chapter、case、process、comparison、table、code、summary 等。
+   - `intent`：这页帮助客户理解、判断或行动什么。
+   - `key points`：3-5 条客户可见信息，不写内部备课话术。
+   - `layout family`：图文页、流程页、矩阵页、案例页、代码页、信息图等。
+   - `visual asset`：logo、截图、generated image、业务流程图、表格、图标；标注 `strict input asset` 或 `style reference`。
+   - `density`：low / medium / high，客户现场可读，不把讲稿塞进页面。
+   - `speaker notes`：只放讲解辅助，不把内部提示写到画面上。
+   - `local_context`：把本页需要的字段、规则、案例背景写清楚，避免引用“上页/上面那个框架”这类隐式上下文。
 5. 用 AI-led design judgment 制作 deck：
    - 每 3-5 页改变一次视觉节奏。
    - 主动使用 visual assets、screenshots、generated images、diagrams 或 infographic。
    - 代码页只展示关键片段，保证字号和业务解释层级。
    - 业务案例页要先讲业务问题，再讲处理规则和输出结果。
-6. 生成后必须 render all slides，查看 contact sheet 和 full-size previews；发现重叠、越界、文字过小、图片缺失或页面重复感时，先返修再交付。
+6. 按需使用 lightweight sample gate：默认可直接生成 `.pptx`；当材料是高价值客户交付、风格方向不明确，或用户明确要求精修时，先生成并渲染 1 页代表性样张确认视觉身份，再扩展到全 deck。
+7. 生成后必须 render all slides，查看 contact sheet 和 full-size previews；发现重叠、越界、中文乱码、文字过小、图片缺失、strict input asset 未正确使用或页面重复感时，先返修再交付。
 
 ## Inputs / 输入
 
@@ -52,9 +56,10 @@ The brief must capture:
 
 - PPT title, customer, audience, duration, and use case.
 - Business context and expected outcome.
+- Deck-level context: source summary, core claim, canonical terms, and constraints that multiple slides need.
 - Content scope and source material.
-- Visual references, brand assets, and useful image ideas.
-- Page-level goals when known.
+- Visual references, brand assets, useful image ideas, and asset roles (`strict input asset` vs `style reference`).
+- Page-level goals and structured slide plan fields when known.
 - Forbidden internal wording and visual anti-patterns.
 - Acceptance criteria.
 
@@ -64,10 +69,17 @@ Use `brief.md` as a template. For a filled regression sample, see `examples/brie
 
 - MUST 优先使用 Markdown creative brief + AI-led slide planning 路线。
 - MUST 使用系统 `presentations` skill 生成、渲染并检查最终 `.pptx`。
+- MUST 默认生成可编辑 PowerPoint 页面，保留文本、表格、代码、流程图等对象的可维护性。
+- MUST 保持影刀主视觉身份：白底、影刀红、柔粉氛围、深灰/黑文字；外部风格只借鉴结构，不迁移主色。
+- MUST 让同一 deck 拥有一致 visual identity，但按页面语义改变 composition。
+- MUST 在 slide plan 中显式写出 `deck_context` 和必要的 `local_context`。
+- MUST 区分 `strict input asset` 和 `style reference`；严格输入资产需要保留内容、标签、数据关系或业务含义。
 - MUST 让页面文字面向客户可直接展示，避免内部备课语、提示语和 AI 味说明。
 - MUST 让每个核心知识点对应业务例子、业务流程或输出结果。
 - REQUIRED 在交付前完成 rendered-slide QA；若仍有问题，必须明确披露。
 - NEVER 把 `yingdao_ppt_builder.py` 作为客户版最终 PPT 的默认生成路线。
+- NEVER 默认制作 full-slide image PPT，除非用户明确接受不可编辑图片页。
+- NEVER 引入硬性 outline approval、sample approval 或 mandatory subagent 流水线；样张确认只作为增强流程。
 - NEVER 让整套 deck 都是重复卡片、重复代码框或单一配色节奏。
 - NEVER 在代码页堆满完整脚本；只展示关键 snippet，并配业务解释。
 - NEVER 把 source material 原文大段搬到页面上。
@@ -116,7 +128,7 @@ Expected approach:
 
 1. 将培训规划 Markdown 作为 brief。
 2. 先规划 12-18 页 slide plan，覆盖定位、能力分工、数据结构、Pandas / NumPy、业务案例和闭环总结。
-3. 每页选择合适的 layout family，不套同一种卡片模板。
+3. 每页写明 `role / intent / key points / layout family / visual asset / density / local_context`，不套同一种卡片模板。
 4. 案例页突出业务问题、处理规则、输出结果；代码页只放关键 snippet。
 5. 渲染检查后再交付 `.pptx`。
 
@@ -124,5 +136,5 @@ Expected approach:
 
 - Final output must be a `.pptx`.
 - Include the final PPTX path in the response.
-- Mention any reference deck, image asset, generated visual, or source material used.
+- Mention source material, reference deck, image asset, generated visual, rendered QA result, and known limitations if any.
 - Do not deliver before rendered-slide QA passes or known issues are disclosed.

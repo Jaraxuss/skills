@@ -18,6 +18,16 @@ Use this file as the standard input contract for customer-facing Yingdao-style P
 - [What should the audience understand or decide after the deck?]
 - [What customer-specific industry/process context matters?]
 
+## Deck Context
+
+Use this section to make cross-slide context explicit. Do not rely on later slides understanding "the previous framework" or "the above example" without restating the needed facts.
+
+- Source summary: [one-paragraph summary of the source material]
+- Core claim: [the central message this deck should keep reinforcing]
+- Canonical terms: [approved Chinese/English terms, product names, process names, field names]
+- Audience assumptions: [what the audience already knows and what must be explained]
+- Reusable business frame: [input / rule / output / owner / workflow closure, or another frame used across slides]
+
 ## Goals
 
 1. [Goal 1]
@@ -45,17 +55,29 @@ Source material:
 - Logo: use `assets/yingdao_logo.png` unless another logo is supplied.
 - Visual assets to consider: [screenshots / generated illustrations / process diagrams / reference deck pages / product UI].
 - Reference deck or images: [paths, if any].
+- Style identity rule: keep one Yingdao visual identity across the deck, but vary composition by slide role.
+- Optional sample gate: [not needed / generate and render one representative sample slide before full deck].
 
-## Page-Level Intent
+## Asset Map
 
-If known, list target pages. The agent may adjust sequence and count when it improves the story.
+Classify supplied or generated assets before production.
 
-| Slide | Purpose | Must Say | Suggested Visual |
-| --- | --- | --- | --- |
-| 1 | Cover | [literal customer-facing title] | [hero image / product screenshot / brand image] |
-| 2 | Narrative setup | [why this matters] | [simple statement or visual contrast] |
-| 3 | Map | [modules / route] | [timeline or structured map] |
-| ... | ... | ... | ... |
+| Asset | Type | Role | Fidelity Requirement | Target Slide |
+| --- | --- | --- | --- | --- |
+| [path or description] | strict input asset | [must appear as evidence/content] | [preserve labels/data/UI/business meaning] | [slide number or purpose] |
+| [path or description] | style reference | [visual inspiration only] | [match palette/composition mood; do not copy content] | [deck-level or slide-specific] |
+| [image idea] | generated visual | [business scene / process metaphor / hero visual] | [must match Yingdao palette and customer-facing tone] | [slide number or purpose] |
+
+## Structured Slide Plan
+
+If known, list target pages. The agent may adjust sequence and count when it improves the story. Each page should be self-contained enough for another agent to implement without guessing the hidden context.
+
+| Slide | Role | Intent | Key Points | Layout Family | Visual Asset | Density | Local Context / Speaker Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | cover | [open the customer story] | [literal customer-facing title; customer context] | title + hero visual | [hero image / product screenshot / brand image] | low | [opening talk track or source reminder] |
+| 2 | setup | [explain why this matters now] | [business tension; expected outcome] | statement or contrast | [business scene / process contrast] | low-medium | [customer-specific context] |
+| 3 | map | [show route and modules] | [modules; business outcomes] | timeline / route map | [icons / step map] | medium | [how to introduce the route] |
+| ... | ... | ... | ... | ... | ... | ... | ... |
 
 ## Customer-Facing Copy Rules
 
@@ -76,6 +98,8 @@ If known, list target pages. The agent may adjust sequence and count when it imp
 - Do not use tiny code or dense tables that cannot be read in slideshow mode.
 - Do not rely only on text boxes; add meaningful visuals where they help.
 - Do not leave large empty containers with one short sentence.
+- Do not default to full-slide image PPT unless the user explicitly accepts non-editable slides.
+- Do not copy the color systems from external style libraries if they weaken the Yingdao red/white/pink identity.
 
 ## Acceptance Criteria
 
@@ -84,3 +108,6 @@ If known, list target pages. The agent may adjust sequence and count when it imp
 - Layout rhythm changes across the deck.
 - At least some slides use real or generated visual assets when appropriate.
 - Rendered preview has no obvious overlap, clipping, unreadable text, or broken images.
+- Slide content matches the structured slide plan, or deviations are intentional and improve the story.
+- Required `strict input asset` items are visibly preserved and not replaced by approximate redraws.
+- Final response reports source material, visual assets, rendered QA result, and known limitations.

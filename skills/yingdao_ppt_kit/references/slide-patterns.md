@@ -2,6 +2,29 @@
 
 Use this reference when planning page-level layouts.
 
+## Structured Slide Plan
+
+Before authoring, create a slide plan where every page has these fields:
+
+| Field | Requirement |
+| --- | --- |
+| `role` | cover, setup, map, chapter, concept, case, process, comparison, table, code, summary, Q&A |
+| `intent` | what the customer should understand, decide, or do after this slide |
+| `key_points` | 3-5 concise customer-facing points |
+| `layout_family` | title + hero, statement, visual process, comparison, case story, code + explanation, matrix, checklist |
+| `visual_asset` | logo, screenshot, strict input asset, style reference, generated visual, diagram, table, icon |
+| `density` | low, medium, or high; high must still be readable in slideshow mode |
+| `local_context` | facts, fields, rules, terms, or examples this slide needs so it does not rely on hidden cross-slide context |
+| `speaker_notes` | talk-track support only; never visible internal coaching language |
+
+Use `deck_context` for concepts that multiple slides need: source summary, core claim, canonical terms, recurring business frame, and customer assumptions.
+
+## Asset Roles
+
+- `strict input asset`: must be visibly represented and preserve its labels, data, UI content, arrows, relationships, or business meaning.
+- `style reference`: use only for palette, composition mood, density, texture, or visual hierarchy; do not copy private content.
+- `generated visual`: create or source a business-relevant visual when no real screenshot exists; it must match the Yingdao red/white/pink identity.
+
 ## Recommended Patterns
 
 - Cover: strong title, customer context, logo, one meaningful hero visual.
@@ -20,6 +43,19 @@ Use this reference when planning page-level layouts.
 - Avoid stacking table slides back to back unless they serve different purposes.
 - Use section transitions for long decks.
 - Alternate dense explanation slides with visual or statement slides.
+- Keep one visual identity, but do not repeat one composition unless it is a deliberate sequence.
+- If two adjacent pages share the same layout family, make the content relationship explicit in the slide plan.
+
+## Lightweight Sample Gate
+
+Default behavior is direct `.pptx` production after planning. Use a one-slide sample gate when:
+
+- the deck is a high-value customer-facing deliverable;
+- the requested style is ambiguous or depends on a reference deck/image;
+- the user explicitly asks for polishing, premium output, or a less template-like result;
+- the first generated/rendered pass shows a high risk of repeated composition.
+
+The sample should be a representative content slide, not always the cover. Render and inspect it before using the same visual identity across the deck. Do not turn this into a hard approval chain unless the user asks for that workflow.
 
 ## Code Slides
 
