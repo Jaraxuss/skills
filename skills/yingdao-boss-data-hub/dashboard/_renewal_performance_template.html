@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>续费绩效看板 - 影刀 BOSS</title>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --panel-soft: #f1f4f7;
+      --border: #d7dde4;
+      --border-strong: #aeb9c5;
+      --text: #1e2933;
+      --muted: #647484;
+      --soft: #8b99a8;
+      --green: #12805c;
+      --green-soft: #e5f5ee;
+      --amber: #9a6700;
+      --amber-soft: #fff3d6;
+      --red: #b42318;
+      --red-soft: #fde8e7;
+      --blue: #1b64b0;
+      --blue-soft: #e7f0fb;
+      --radius: 8px;
+      --shadow: 0 10px 28px rgba(31, 41, 55, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+    html { font-size: 14px; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      background: var(--bg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    button, input, select { font: inherit; }
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .page { max-width: 1600px; margin: 0 auto; padding: 22px 24px 44px; }
+    .header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 16px;
+    }
+    h1 { margin: 0; font-size: 1.55rem; letter-spacing: 0; }
+    .subtitle { margin-top: 6px; color: var(--muted); font-size: 0.88rem; }
+    .meta { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; color: var(--muted); font-size: 0.78rem; }
+    .meta span, .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 8px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--panel);
+      white-space: nowrap;
+    }
+
+    .toolbar, .summary, .table-wrap {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+    .toolbar {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(130px, auto)) minmax(240px, 1fr) auto;
+      gap: 10px;
+      align-items: end;
+      padding: 12px;
+      margin-bottom: 14px;
+    }
+    .field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+    .label { color: var(--muted); font-size: 0.74rem; font-weight: 700; }
+    .select, .search {
+      height: 34px;
+      min-width: 130px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      background: #fff;
+      padding: 0 10px;
+    }
+    .search { width: 100%; min-width: 220px; }
+    .quarter-group { display: flex; gap: 6px; flex-wrap: wrap; }
+    .q-btn, .reset-btn, .expand-btn {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      background: var(--panel-soft);
+      cursor: pointer;
+    }
+    .q-btn, .reset-btn { height: 34px; padding: 0 11px; }
+    .q-btn.active {
+      color: var(--blue);
+      border-color: #8db7e8;
+      background: var(--blue-soft);
+      font-weight: 700;
+    }
+    .reset-btn { white-space: nowrap; }
+    .expand-btn {
+      width: 24px;
+      height: 24px;
+      padding: 0;
+      flex: 0 0 auto;
+      line-height: 20px;
+      font-weight: 800;
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(130px, 1fr));
+      gap: 0;
+      margin-bottom: 14px;
+      overflow: hidden;
+    }
+    .metric {
+      padding: 13px 14px;
+      border-right: 1px solid var(--border);
+      min-width: 0;
+    }
+    .metric:last-child { border-right: none; }
+    .metric-label { color: var(--muted); font-size: 0.74rem; font-weight: 700; }
+    .metric-value { margin-top: 6px; font-size: 1.35rem; font-weight: 800; white-space: nowrap; }
+    .metric-note { margin-top: 3px; color: var(--soft); font-size: 0.75rem; }
+    .positive { color: var(--green); }
+    .negative { color: var(--red); }
+    .neutral { color: var(--muted); }
+
+    .table-wrap { overflow: hidden; }
+    .table-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .table-title { margin: 0; font-size: 1rem; }
+    .table-note { color: var(--muted); font-size: 0.8rem; }
+    .scroll { overflow: auto; max-height: calc(100vh - 250px); }
+    table { width: 100%; min-width: 1280px; border-collapse: collapse; }
+    th, td {
+      padding: 10px 11px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+      text-align: left;
+    }
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      color: var(--muted);
+      background: #fbfcfd;
+      font-size: 0.76rem;
+      font-weight: 800;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+    tbody tr.data-row:hover { background: #fbfcfd; }
+    .client-cell { display: flex; align-items: flex-start; gap: 8px; min-width: 260px; }
+    .client { font-weight: 800; }
+    .sub { margin-top: 3px; color: var(--soft); font-size: 0.76rem; }
+    .money { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      max-width: 100%;
+      padding: 3px 7px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .tag.green { color: var(--green); background: var(--green-soft); }
+    .tag.red { color: var(--red); background: var(--red-soft); }
+    .tag.amber { color: var(--amber); background: var(--amber-soft); }
+    .tag.blue { color: var(--blue); background: var(--blue-soft); }
+    .tag.gray { color: var(--muted); background: var(--panel-soft); }
+    .lines { display: flex; flex-direction: column; gap: 5px; }
+    .line { color: var(--text); }
+    .line small { color: var(--muted); }
+    .empty { padding: 30px; color: var(--muted); text-align: center; }
+    .detail-row td { background: #fbfcfd; padding: 0 11px 12px 43px; }
+    .detail-panel {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: #fff;
+      margin-top: 2px;
+      overflow: hidden;
+    }
+    .detail-section { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+    .detail-section:last-child { border-bottom: none; }
+    .detail-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+      font-weight: 800;
+    }
+    .mini-table { width: 100%; min-width: 980px; border-collapse: collapse; }
+    .mini-table th, .mini-table td {
+      padding: 7px 8px;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.84rem;
+    }
+    .mini-table th {
+      position: static;
+      background: var(--panel-soft);
+      cursor: default;
+    }
+    .order-table {
+      width: 100%;
+      min-width: 0;
+      border-collapse: collapse;
+      table-layout: fixed;
+      margin: 0 0 10px;
+      border: 1px solid var(--border);
+    }
+    .order-table th, .order-table td {
+      padding: 6px 7px;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.8rem;
+      vertical-align: top;
+      overflow-wrap: anywhere;
+    }
+    .order-table th {
+      position: static;
+      background: #fbfcfd;
+      cursor: default;
+    }
+    .contract-orders td {
+      padding: 0 0 4px;
+      border-bottom: 1px solid var(--border);
+      background: #fff;
+    }
+    .contract-orders .order-wrap {
+      padding-left: 2em;
+    }
+    .formula {
+      color: var(--muted);
+      font-size: 0.8rem;
+      line-height: 1.55;
+      margin-top: 7px;
+    }
+
+    @media (max-width: 1100px) {
+      .toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .metric { border-right: none; border-bottom: 1px solid var(--border); }
+      .header { align-items: flex-start; flex-direction: column; }
+      .meta { justify-content: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="header">
+      <div>
+        <h1>续费绩效看板</h1>
+        <div class="subtitle">续费前 ARR 基准、Q 内增购与变化金额 ARR</div>
+      </div>
+      <div class="meta" id="meta"></div>
+    </header>
+
+    <section class="toolbar">
+      <label class="field">
+        <span class="label">考核年度</span>
+        <select class="select" id="yearSelect"></select>
+      </label>
+      <div class="field">
+        <span class="label">考核季度</span>
+        <div class="quarter-group" id="quarterGroup"></div>
+      </div>
+      <label class="field">
+        <span class="label">续费状态</span>
+        <select class="select" id="statusSelect">
+          <option value="">全部状态</option>
+          <option value="未续/断约">未续/断约</option>
+          <option value="部分未续">部分未续</option>
+          <option value="续费增购">续费增购</option>
+          <option value="续费减购">续费减购</option>
+          <option value="续费无变化">续费无变化</option>
+          <option value="续费混合">续费混合</option>
+          <option value="待续/未到期">待续/未到期</option>
+          <option value="Q内增购">Q内增购</option>
+        </select>
+      </label>
+      <label class="field">
+        <span class="label">商品类型</span>
+        <select class="select" id="productSelect">
+          <option value="">全部商品</option>
+          <option value="RPA">RPA</option>
+          <option value="数据连接器">数据连接器</option>
+          <option value="AI power">AI power</option>
+        </select>
+      </label>
+      <label class="field">
+        <span class="label">搜索客户</span>
+        <input class="search" id="searchInput" placeholder="客户名称 / 编号 / 合同号">
+      </label>
+      <button class="reset-btn" id="resetBtn">重置</button>
+    </section>
+
+    <section class="summary" id="summary"></section>
+
+    <section class="table-wrap">
+      <div class="table-head">
+        <h2 class="table-title">续费情况明细</h2>
+        <div class="table-note" id="tableNote"></div>
+      </div>
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr>
+              <th data-sort="clientName">客户</th>
+              <th data-sort="period">考核期</th>
+              <th data-sort="productsText">商品类型</th>
+              <th data-sort="baselineArr" class="money">续费前 ARR 基准</th>
+              <th data-sort="renewalAmount" class="money">续费金额</th>
+              <th data-sort="status">续费情况</th>
+              <th data-sort="qAddArr" class="money">Q内增购</th>
+              <th data-sort="changeAmount" class="money">变化金额</th>
+              <th data-sort="changeArr" class="money">变化金额 ARR</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="empty" hidden>暂无匹配数据</div>
+    </section>
+  </main>
+
+  <script>
+    const DATA = "__RENEWAL_DATA_PLACEHOLDER__";
+
+    const state = {
+      year: "",
+      quarters: new Set(["q1", "q2", "q3", "q4"]),
+      status: "",
+      product: "",
+      search: "",
+      sortKey: "clientName",
+      sortDir: "asc",
+    };
+    const expanded = new Set();
+
+    const fmtMoney = new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY", maximumFractionDigits: 0 });
+    const fmtMoney2 = new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const quarterLabels = { q1: "Q1", q2: "Q2", q3: "Q3", q4: "Q4" };
+    const quarterOrder = { q1: 1, q2: 2, q3: 3, q4: 4 };
+
+    function init() {
+      renderMeta();
+      initYearSelect();
+      initQuarters();
+      bindControls();
+      render();
+    }
+
+    function renderMeta() {
+      const meta = DATA.meta || {};
+      document.getElementById("meta").innerHTML = [
+        `业务组：${meta.businessGroup || "未知"}`,
+        `应续项：${meta.dueRowCount || 0}`,
+        `增购订单：${meta.addRowCount || 0}`,
+        `误差阈值：${money(meta.deltaTolerance || 10)}`,
+        `截至：${meta.asOfDate || "-"}`,
+        `生成：${(meta.generatedAt || "").slice(0, 19).replace("T", " ")}`,
+      ].map(text => `<span>${escapeHtml(text)}</span>`).join("");
+    }
+
+    function initYearSelect() {
+      const years = DATA.meta.availableYears || [];
+      const select = document.getElementById("yearSelect");
+      select.innerHTML = years.map(year => `<option value="${year}">${year}</option>`).join("");
+      state.year = String(years.includes(2026) ? 2026 : (years[years.length - 1] || ""));
+      select.value = state.year;
+    }
+
+    function initQuarters() {
+      const group = document.getElementById("quarterGroup");
+      group.innerHTML = Object.entries(quarterLabels).map(([key, label]) => {
+        return `<button class="q-btn active" data-quarter="${key}" type="button">${label}</button>`;
+      }).join("");
+    }
+
+    function bindControls() {
+      document.getElementById("yearSelect").addEventListener("change", event => {
+        state.year = event.target.value;
+        render();
+      });
+      document.getElementById("quarterGroup").addEventListener("click", event => {
+        const btn = event.target.closest(".q-btn");
+        if (!btn) return;
+        const q = btn.dataset.quarter;
+        if (state.quarters.has(q) && state.quarters.size > 1) {
+          state.quarters.delete(q);
+        } else {
+          state.quarters.add(q);
+        }
+        btn.classList.toggle("active", state.quarters.has(q));
+        render();
+      });
+      document.getElementById("statusSelect").addEventListener("change", event => {
+        state.status = event.target.value;
+        render();
+      });
+      document.getElementById("productSelect").addEventListener("change", event => {
+        state.product = event.target.value;
+        render();
+      });
+      document.getElementById("searchInput").addEventListener("input", event => {
+        state.search = event.target.value.trim().toLowerCase();
+        render();
+      });
+      document.getElementById("resetBtn").addEventListener("click", () => {
+        state.status = "";
+        state.product = "";
+        state.search = "";
+        state.quarters = new Set(["q1", "q2", "q3", "q4"]);
+        document.getElementById("statusSelect").value = "";
+        document.getElementById("productSelect").value = "";
+        document.getElementById("searchInput").value = "";
+        document.querySelectorAll(".q-btn").forEach(btn => btn.classList.add("active"));
+        render();
+      });
+      document.querySelector("thead").addEventListener("click", event => {
+        const th = event.target.closest("th[data-sort]");
+        if (!th) return;
+        const key = th.dataset.sort;
+        if (state.sortKey === key) {
+          state.sortDir = state.sortDir === "asc" ? "desc" : "asc";
+        } else {
+          state.sortKey = key;
+          state.sortDir = ["baselineArr", "renewalAmount", "qAddArr", "changeAmount", "changeArr"].includes(key) ? "desc" : "asc";
+        }
+        render();
+      });
+      document.getElementById("tbody").addEventListener("click", event => {
+        const btn = event.target.closest(".expand-btn");
+        if (!btn) return;
+        const id = btn.dataset.id;
+        if (expanded.has(id)) expanded.delete(id);
+        else expanded.add(id);
+        render();
+      });
+    }
+
+    function periodMatches(row) {
+      if (state.year && String(row.year) !== String(state.year)) return false;
+      if (!state.quarters.has(row.quarter)) return false;
+      if (state.product && row.product !== state.product) return false;
+      return true;
+    }
+
+    function currentRows() {
+      const periodDueRows = (DATA.dueRows || []).filter(periodMatches);
+      const selectedDueIds = new Set(periodDueRows.map(row => row.id));
+      const periodAddRows = (DATA.addRows || []).filter(row => {
+        if (!periodMatches(row)) return false;
+        return !(row.baselineForDueIds || []).some(id => selectedDueIds.has(id));
+      });
+      return aggregateRows(periodDueRows, periodAddRows)
+        .filter(row => passesStatus(row) && passesSearch(row))
+        .sort(compareRows);
+    }
+
+    function aggregateRows(dueRows, addRows) {
+      const grouped = new Map();
+      const ensure = seed => {
+        const key = seed.customNo;
+        if (!grouped.has(key)) {
+          grouped.set(key, {
+            id: key,
+            clientName: seed.clientName,
+            customNo: seed.customNo,
+            organizationUuid: seed.organizationUuid || "",
+            enterpriseUrl: seed.enterpriseUrl || "",
+            csOwner: seed.csOwner || "未填写",
+            sales: seed.sales || "",
+            serviceStage: seed.serviceStage || "",
+            cooperationStatus: seed.cooperationStatus || "",
+            periods: new Set(),
+            products: new Set(),
+            statuses: new Set(),
+            statusGroups: new Set(),
+            dueRows: [],
+            addRows: [],
+            baselineArr: 0,
+            baselineAmount: 0,
+            renewalAmount: 0,
+            qAddAmount: 0,
+            qAddArr: 0,
+            changeAmount: 0,
+            changeArr: 0,
+            contractNos: new Set(),
+          });
+        }
+        return grouped.get(key);
+      };
+
+      for (const due of dueRows) {
+        const row = ensure(due);
+        row.periods.add(due.period);
+        row.products.add(due.product);
+        row.statuses.add(due.status);
+        row.statusGroups.add(due.statusGroup);
+        row.dueRows.push(due);
+        row.baselineArr += Number(due.baselineArr || 0);
+        row.baselineAmount += Number(due.baselineAmount || 0);
+        row.renewalAmount += Number(due.renewal?.amount || 0);
+        row.changeAmount += Number(due.changeAmount || 0);
+        row.changeArr += Number(due.changeArr || 0);
+        collectContracts(row, due);
+      }
+
+      for (const add of addRows) {
+        const row = ensure(add);
+        row.periods.add(add.period);
+        row.products.add(add.product);
+        row.statuses.add("Q内增购");
+        row.addRows.push(add);
+        row.qAddAmount += Number(add.amount || 0);
+        row.qAddArr += Number(add.arrAmount || 0);
+        row.changeAmount += Number(add.amount || 0);
+        row.changeArr += Number(add.arrAmount || 0);
+        if (add.contract?.contractNo) row.contractNos.add(add.contract.contractNo);
+      }
+
+      return Array.from(grouped.values()).map(row => {
+        row.periods = Array.from(row.periods).sort(comparePeriod);
+        row.products = Array.from(row.products).sort();
+        row.statuses = Array.from(row.statuses);
+        row.statusGroups = Array.from(row.statusGroups);
+        row.contractNos = Array.from(row.contractNos).sort();
+        row.status = summarizeStatus(row);
+        row.productsText = row.products.join("、");
+        row.periodText = compactPeriods(row.periods);
+        row.searchText = buildSearchText(row);
+        return row;
+      });
+    }
+
+    function collectContracts(row, due) {
+      if (due.base?.contractNo) row.contractNos.add(due.base.contractNo);
+      if (due.renewal?.contractNo) row.contractNos.add(due.renewal.contractNo);
+      for (const add of due.preRenewalAdds || []) {
+        if (add.contractNo) row.contractNos.add(add.contractNo);
+      }
+    }
+
+    function comparePeriod(a, b) {
+      const [ay, aq] = String(a).split(" ");
+      const [by, bq] = String(b).split(" ");
+      return Number(ay) - Number(by) || (quarterOrder[aq?.toLowerCase()] || 0) - (quarterOrder[bq?.toLowerCase()] || 0);
+    }
+
+    function compactPeriods(periods) {
+      const byYear = new Map();
+      for (const period of periods) {
+        const [year, quarter] = period.split(" ");
+        if (!byYear.has(year)) byYear.set(year, []);
+        byYear.get(year).push(quarter);
+      }
+      return Array.from(byYear.entries()).map(([year, quarters]) => `${year} ${quarters.join("/")}`).join("、");
+    }
+
+    function summarizeStatus(row) {
+      const statuses = new Set(row.statuses);
+      if (statuses.has("未续/断约")) {
+        return statuses.size > 1 ? "部分未续" : "未续/断约";
+      }
+      if (statuses.has("待续/未到期")) return "待续/未到期";
+      if (statuses.has("Q内增购") && (row.dueRows || []).length > 0 && !statuses.has("续费减购")) return "续费增购";
+      if (statuses.has("续费增购") && statuses.has("续费减购")) return "续费混合";
+      if (statuses.has("续费增购")) return "续费增购";
+      if (statuses.has("续费减购")) return "续费减购";
+      if (statuses.has("续费无变化")) return "续费无变化";
+      if (statuses.has("Q内增购")) return "Q内增购";
+      return "已续";
+    }
+
+    function statusLabel(row) {
+      if ((row.qAddArr || 0) > 0 && !["Q内增购", "续费增购"].includes(row.status)) {
+        return `${row.status} + Q内增购`;
+      }
+      return row.status;
+    }
+
+    function passesStatus(row) {
+      if (!state.status) return true;
+      return row.status === state.status || (row.statuses || []).includes(state.status);
+    }
+
+    function passesSearch(row) {
+      if (!state.search) return true;
+      return row.searchText.includes(state.search);
+    }
+
+    function buildSearchText(row) {
+      const parts = [
+        row.clientName,
+        row.customNo,
+        row.csOwner,
+        row.productsText,
+        row.periodText,
+        row.status,
+        ...(row.statuses || []),
+        ...(row.contractNos || []),
+      ];
+      for (const due of row.dueRows || []) {
+        parts.push(due.base?.contractNo, due.renewal?.contractNo, due.base?.details, due.renewal?.details);
+        for (const add of due.preRenewalAdds || []) parts.push(add.contractNo, add.details);
+      }
+      for (const add of row.addRows || []) parts.push(add.contract?.contractNo, add.contract?.details);
+      return parts.filter(Boolean).join(" ").toLowerCase();
+    }
+
+    function compareRows(a, b) {
+      const key = state.sortKey;
+      const av = sortValue(a, key);
+      const bv = sortValue(b, key);
+      let result;
+      if (typeof av === "number" && typeof bv === "number") result = av - bv;
+      else result = String(av).localeCompare(String(bv), "zh-CN");
+      return state.sortDir === "asc" ? result : -result;
+    }
+
+    function sortValue(row, key) {
+      if (key === "period") return row.periods[0] || "";
+      if (key === "productsText") return row.productsText || "";
+      return row[key] ?? "";
+    }
+
+    function render() {
+      const rows = currentRows();
+      renderSummary(rows);
+      renderTable(rows);
+    }
+
+    function renderSummary(rows) {
+      const dueCount = rows.reduce((sum, row) => sum + (row.dueRows || []).length, 0);
+      const churnCount = rows.reduce((sum, row) => sum + (row.dueRows || []).filter(due => due.statusGroup === "churn").length, 0);
+      const qAddCustomers = rows.filter(row => (row.qAddArr || 0) > 0).length;
+      const changeAmount = rows.reduce((sum, row) => sum + (row.changeAmount || 0), 0);
+      const changeArr = rows.reduce((sum, row) => sum + (row.changeArr || 0), 0);
+      const qAddArr = rows.reduce((sum, row) => sum + (row.qAddArr || 0), 0);
+      const cards = [
+        ["客户数", rows.length, "当前筛选"],
+        ["应续项", dueCount, "商品维度"],
+        ["未续项", churnCount, "断约/未续"],
+        ["Q内增购客户", qAddCustomers, "按 startDate"],
+        ["变化金额", money(changeAmount), ""],
+        ["变化金额 ARR", money(changeArr), `Q内增购ARR ${money(qAddArr)}`],
+      ];
+      document.getElementById("summary").innerHTML = cards.map(([label, value, note]) => {
+        const cls = label === "变化金额" ? signedClass(changeAmount) : (label === "变化金额 ARR" ? signedClass(changeArr) : "");
+        return `<div class="metric"><div class="metric-label">${escapeHtml(label)}</div><div class="metric-value ${cls}">${escapeHtml(value)}</div><div class="metric-note">${escapeHtml(note || " ")}</div></div>`;
+      }).join("");
+    }
+
+    function renderTable(rows) {
+      document.getElementById("tableNote").textContent = `${rows.length} 个客户`;
+      document.getElementById("empty").hidden = rows.length > 0;
+      document.getElementById("tbody").innerHTML = rows.map(row => {
+        const open = expanded.has(row.id);
+        return `
+          <tr class="data-row">
+            <td>${customerCell(row, open)}</td>
+            <td>${escapeHtml(row.periodText)}</td>
+            <td>${row.products.map(p => `<span class="tag gray">${escapeHtml(p)}</span>`).join(" ")}</td>
+            <td class="money">${row.baselineArr ? money(row.baselineArr) : '<span class="sub">-</span>'}</td>
+            <td class="money">${row.renewalAmount ? money(row.renewalAmount) : '<span class="sub">-</span>'}</td>
+            <td><span class="tag ${tagClass(row.status)}">${escapeHtml(statusLabel(row))}</span>${statusDetails(row)}</td>
+            <td class="money">${qAddBlock(row)}</td>
+            <td class="money ${signedClass(row.changeAmount)}">${money(row.changeAmount)}</td>
+            <td class="money ${signedClass(row.changeArr)}">${money(row.changeArr)}</td>
+          </tr>
+          <tr class="detail-row" ${open ? "" : "hidden"}>
+            <td colspan="9">${detailPanel(row)}</td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function customerCell(row, open) {
+      const name = row.enterpriseUrl
+        ? `<a class="client" href="${escapeAttr(row.enterpriseUrl)}" target="_blank" rel="noreferrer">${escapeHtml(row.clientName)}</a>`
+        : `<span class="client">${escapeHtml(row.clientName)}</span>`;
+      return `
+        <div class="client-cell">
+          <button class="expand-btn" type="button" data-id="${escapeAttr(row.id)}" aria-label="${open ? "收起" : "展开"}">${open ? "−" : "+"}</button>
+          <div>
+            <div>${name}</div>
+            <div class="sub">${escapeHtml(row.customNo)}｜CS ${escapeHtml(row.csOwner || "未填写")}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    function statusDetails(row) {
+      const parts = [];
+      for (const due of row.dueRows || []) {
+        if (due.statusGroup === "churn") parts.push(`${due.product} 未续 ${money(due.churnArr)}`);
+        else if (due.statusGroup === "pending") parts.push(`${due.product} 待续/未到期`);
+        else if (due.renewalDeltaArr) parts.push(`${due.product} ${due.status} ${money(due.renewalDeltaArr)}`);
+        else parts.push(`${due.product} ${due.status}`);
+      }
+      if ((row.qAddArr || 0) > 0) parts.push(`Q内增购 ${row.addRows.length} 笔，ARR ${money(row.qAddArr)}`);
+      return `<div class="sub">${escapeHtml(parts.join("；") || "-")}</div>`;
+    }
+
+    function qAddBlock(row) {
+      if (!row.addRows || !row.addRows.length) return '<span class="sub">无</span>';
+      return `<div class="lines"><div class="line">${row.addRows.length} 笔 / ${money(row.qAddAmount)}</div><div class="sub">ARR ${money(row.qAddArr)}</div></div>`;
+    }
+
+    function detailPanel(row) {
+      const dueSections = (row.dueRows || []).map(due => dueDetailSection(due)).join("");
+      const addSection = addDetailSection(row.addRows || []);
+      return `<div class="detail-panel">${dueSections}${addSection}</div>`;
+    }
+
+    function dueDetailSection(due) {
+      const preAdds = due.preRenewalAdds || [];
+      const entries = [
+        { type: "上一期主单", order: due.base, note: "" },
+        ...preAdds.map(add => ({ type: "续费前增购基准", order: add, note: `ARR ${money(add.arrAmount, 2)}` })),
+      ];
+      if (due.renewal) entries.push({ type: "本次续费", order: due.renewal, note: `续费差额ARR ${money(due.renewalDeltaArr, 2)}` });
+      const formulaParts = [`主单 ${money(due.base?.amount || 0, 2)}`];
+      for (const add of preAdds) formulaParts.push(`${add.contractNo} ARR ${money(add.arrAmount, 2)}`);
+      const formula = `续费前 ARR 基准：${formulaParts.join(" + ")} = ${money(due.baselineArr, 2)}。`
+        + (due.renewal
+          ? ` 本次续费 ${money(due.renewal.amount, 2)}，差额 ${money(due.renewalRawDeltaArr, 2)}；绝对值小于 ${money(DATA.meta.deltaTolerance || 10)} 时按 0 处理。`
+          : due.statusGroup === "pending"
+            ? ` 截至 ${DATA.meta.asOfDate || "-"} 尚未到上一期到期日，暂不计流失。`
+            : ` 未续流失 ARR ${money(due.churnArr, 2)}。`);
+      const table = entries.length ? contractTable(entries) : emptyContractTable("未续/断约");
+      return `
+        <div class="detail-section">
+          <div class="detail-title">
+            <span>${escapeHtml(due.product)}｜${escapeHtml(due.period)}｜${escapeHtml(due.status)}</span>
+            <span class="tag ${tagClass(due.status)}">${escapeHtml(due.status)}</span>
+          </div>
+          ${table}
+          <div class="formula">${escapeHtml(formula)}</div>
+        </div>
+      `;
+    }
+
+    function addDetailSection(addRows) {
+      if (!addRows.length) {
+        return `
+          <div class="detail-section">
+            <div class="detail-title"><span>Q内增购</span><span class="tag gray">无</span></div>
+          </div>
+        `;
+      }
+      const entries = addRows.map(add => ({ type: "Q内增购", order: add.contract, note: `ARR ${money(add.arrAmount, 2)}` }));
+      return `
+        <div class="detail-section">
+          <div class="detail-title">
+            <span>Q内增购</span>
+            <span class="tag green">${addRows.length} 笔，ARR ${money(addRows.reduce((sum, add) => sum + Number(add.arrAmount || 0), 0))}</span>
+          </div>
+          ${contractTable(entries)}
+        </div>
+      `;
+    }
+
+    function contractTable(entries) {
+      const groups = groupEntriesByContract(entries.filter(entry => entry.order));
+      const body = groups.map(group => `${contractRow(group)}${contractOrdersRow(group)}`).join("");
+      return `
+        <table class="mini-table">
+          <thead><tr><th>类型</th><th>合同</th><th>订单最小开始日期</th><th>订单最大截止日期</th><th class="money">合同总额</th><th class="money">订单累计总额</th></tr></thead>
+          <tbody>${body}</tbody>
+        </table>
+      `;
+    }
+
+    function emptyContractTable(text) {
+      return `
+        <table class="mini-table">
+          <tbody>${emptyOrderRow("合同", text)}</tbody>
+        </table>
+      `;
+    }
+
+    function groupEntriesByContract(entries) {
+      const map = new Map();
+      for (const entry of entries) {
+        const order = entry.order;
+        const key = order.contractNo || order.orderNo || `${entry.type}-${order.startDate}-${order.endDate}`;
+        if (!map.has(key)) {
+          map.set(key, {
+            contractNo: order.contractNo || "",
+            contractUrl: order.contractUrl || "",
+            contractTotalAmount: Number(order.contractTotalAmount || 0),
+            entries: [],
+          });
+        }
+        map.get(key).entries.push(entry);
+      }
+      return Array.from(map.values());
+    }
+
+    function contractRow(group) {
+      const orders = group.entries.map(entry => entry.order);
+      const typeText = Array.from(new Set(group.entries.map(entry => entry.type))).join(" / ");
+      const contract = group.contractUrl && group.contractNo
+        ? `<a href="${escapeAttr(group.contractUrl)}" target="_blank" rel="noreferrer">${escapeHtml(group.contractNo)}</a>`
+        : escapeHtml(group.contractNo || "-");
+      const starts = orders.map(order => order.startDate).filter(Boolean).sort();
+      const ends = orders.map(order => order.endDate).filter(Boolean).sort();
+      const orderTotal = orders.reduce((sum, order) => sum + Number(order.amount || 0), 0);
+      return `
+        <tr>
+          <td>${escapeHtml(typeText || "-")}</td>
+          <td>${contract}</td>
+          <td>${escapeHtml(starts[0] || "-")}</td>
+          <td>${escapeHtml(ends[ends.length - 1] || "-")}</td>
+          <td class="money">${money(group.contractTotalAmount || orderTotal, 2)}</td>
+          <td class="money">${money(orderTotal, 2)}</td>
+        </tr>
+      `;
+    }
+
+    function contractOrdersRow(group) {
+      const rows = group.entries.map(entry => orderRow(entry.type, entry.order, entry.note)).join("");
+      return `
+        <tr class="contract-orders">
+          <td colspan="6">
+            <div class="order-wrap">
+              <table class="order-table">
+                <colgroup>
+                  <col style="width: 7%">
+                  <col style="width: 15%">
+                  <col style="width: 34%">
+                  <col style="width: 10%">
+                  <col style="width: 7%">
+                  <col style="width: 7%">
+                  <col style="width: 12%">
+                  <col style="width: 8%">
+                </colgroup>
+                <thead><tr><th>订单类型</th><th>产品名称</th><th>详情</th><th class="money">金额</th><th>是否买断</th><th>是否赠送</th><th>订单编号</th><th>说明</th></tr></thead>
+                <tbody>${rows}</tbody>
+              </table>
+            </div>
+          </td>
+        </tr>
+      `;
+    }
+
+    function orderRow(label, order, extra) {
+      if (!order) return emptyOrderRow(label, "-");
+      const detail = order.details || `${order.startDate || "-"} ~ ${order.endDate || "-"}`;
+      const contract = order.contractUrl && order.contractNo
+        ? `<a href="${escapeAttr(order.contractUrl)}" target="_blank" rel="noreferrer">${escapeHtml(order.contractNo)}</a>`
+        : escapeHtml(order.contractNo || "-");
+      return `
+        <tr>
+          <td>${escapeHtml(order.orderTypeLabel || label || "-")}</td>
+          <td>${escapeHtml(order.productName || order.product || "-")}<br><small>${contract}</small></td>
+          <td>${escapeHtml(detail)}<br><small>${escapeHtml(order.startDate || "-")} ~ ${escapeHtml(order.endDate || "-")}｜${Number(order.serviceDays || 0)} 天</small></td>
+          <td class="money">${money(order.amount || 0, 2)}</td>
+          <td>${order.isBuyout ? "是" : "否"}</td>
+          <td>${order.isGift ? "是" : "否"}</td>
+          <td>${escapeHtml(order.orderNo || "-")}</td>
+          <td>${escapeHtml(extra || "-")}</td>
+        </tr>
+      `;
+    }
+
+    function emptyOrderRow(label, text) {
+      return `
+        <tr>
+          <td>${escapeHtml(label)}</td>
+          <td colspan="5"><span class="sub">${escapeHtml(text)}</span></td>
+        </tr>
+      `;
+    }
+
+    function money(value, digits = 0) {
+      const n = Number(value || 0);
+      return (digits ? fmtMoney2 : fmtMoney).format(n);
+    }
+
+    function signedClass(value) {
+      const n = Number(value || 0);
+      if (n > 0) return "positive";
+      if (n < 0) return "negative";
+      return "neutral";
+    }
+
+    function tagClass(status) {
+      if (status.includes("未续")) return "red";
+      if (status.includes("待续")) return "amber";
+      if (status.includes("减购")) return "amber";
+      if (status.includes("增购")) return "green";
+      if (status.includes("无变化") || status === "已续") return "blue";
+      return "gray";
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, char => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      }[char]));
+    }
+
+    function escapeAttr(value) {
+      return escapeHtml(value);
+    }
+
+    init();
+  </script>
+</body>
+</html>
