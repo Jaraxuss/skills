@@ -10,6 +10,7 @@ RUNTIME_DIR = os.path.join(SCRIPT_DIR, "../../../runtime/yingdao-boss")
 DEFAULT_INPUT = os.path.join(RUNTIME_DIR, "latest-reports.json")
 DEFAULT_CLIENTS_INPUT = os.path.join(RUNTIME_DIR, "latest-clients.json")
 DEFAULT_EXPIRATION_INPUT = os.path.join(RUNTIME_DIR, "contracts-expiration-summary.json")
+DEFAULT_APP_RUN_INSIGHTS_INPUT = os.path.join(RUNTIME_DIR, "latest-app-run-insights.json")
 DEFAULT_TEMPLATE = os.path.join(SCRIPT_DIR, "_template.html")
 DEFAULT_OUTPUT = os.path.join(SCRIPT_DIR, "dashboard.html")
 PLACEHOLDER = '"__REPORT_DATA_PLACEHOLDER__"'
@@ -117,6 +118,7 @@ def main():
     parser.add_argument("--input", "-i", default=DEFAULT_INPUT, help="Path to latest-reports.json")
     parser.add_argument("--clients-input", default=DEFAULT_CLIENTS_INPUT, help="Optional path to latest-clients.json")
     parser.add_argument("--expiration-input", default=DEFAULT_EXPIRATION_INPUT, help="Optional path to contracts-expiration-summary.json")
+    parser.add_argument("--app-run-insights-input", default=DEFAULT_APP_RUN_INSIGHTS_INPUT, help="Optional path to latest-app-run-insights.json")
     parser.add_argument("--template", "-t", default=DEFAULT_TEMPLATE, help="Path to _template.html")
     parser.add_argument("--output", "-o", default=DEFAULT_OUTPUT, help="Output dashboard.html path")
     args = parser.parse_args()
@@ -124,21 +126,26 @@ def main():
     input_path = os.path.abspath(args.input)
     clients_input_path = os.path.abspath(args.clients_input)
     expiration_input_path = os.path.abspath(args.expiration_input)
+    app_run_insights_input_path = os.path.abspath(args.app_run_insights_input)
     template_path = os.path.abspath(args.template)
     output_path = os.path.abspath(args.output)
 
     reports = read_json(input_path, required=True, label="tenant reports")
     clients_data = read_json(clients_input_path, required=False, label="client profiles")
     expiration_data = read_json(expiration_input_path, required=False, label="expiration summary")
+    app_run_insights_data = read_json(app_run_insights_input_path, required=False, label="app run insights")
 
     payload = dict(reports)
     payload["clientProfiles"] = build_client_profiles(clients_data)
     payload["expirationProfiles"] = build_expiration_profiles(expiration_data)
+    payload["appRunInsights"] = app_run_insights_data or {}
     payload["dashboardMeta"] = {
         "client_profile_count": len({v.get("name") for v in payload["clientProfiles"].values()}),
         "expiration_profile_count": len(payload["expirationProfiles"]),
+        "app_run_insights_available": bool(app_run_insights_data),
         "clients_input": clients_input_path if clients_data else "",
         "expiration_input": expiration_input_path if expiration_data else "",
+        "app_run_insights_input": app_run_insights_input_path if app_run_insights_data else "",
     }
 
     total_rows = len(payload.get("rows", []))
@@ -146,6 +153,7 @@ def main():
     print(f"   → {total_rows} report records, {clients} report clients")
     print(f"   → {payload['dashboardMeta']['client_profile_count']} client profiles")
     print(f"   → {payload['dashboardMeta']['expiration_profile_count']} expiration profiles")
+    print(f"   → app run insights: {'available' if app_run_insights_data else 'not available'}")
 
     if not os.path.exists(template_path):
         print(f"❌ Error: Template not found: {template_path}")
