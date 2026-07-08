@@ -352,7 +352,7 @@
     .drawer-head {
       position: sticky;
       top: 0;
-      z-index: 2;
+      z-index: 30;
       display: flex;
       justify-content: space-between;
       gap: 12px;
@@ -524,6 +524,11 @@
       border-radius: var(--radius);
       background: rgba(15, 23, 28, 0.34);
     }
+    .heatmap-wrap {
+      position: relative;
+      z-index: 0;
+      isolation: isolate;
+    }
     .run-insight-table {
       width: 100%;
       min-width: 760px;
@@ -548,11 +553,17 @@
       background: rgba(251, 191, 36, 0.18);
     }
     .matrix-core-star {
-      flex: 0 0 auto;
+      position: absolute;
+      top: 50%;
+      right: 8px;
+      width: 22px;
+      height: 22px;
+      transform: translateY(-50%);
       opacity: 0;
       border-color: rgba(251, 191, 36, 0.18);
       color: rgba(253, 230, 138, 0.58);
       background: rgba(251, 191, 36, 0.04);
+      font-size: 0.78rem;
       transition: opacity 120ms ease, color 120ms ease, border-color 120ms ease, background 120ms ease;
     }
     .matrix-core-star.active {
@@ -565,12 +576,23 @@
       opacity: 0.72;
     }
     .matrix-app-cell {
+      position: relative;
       display: flex;
       align-items: flex-start;
-      gap: 8px;
       min-width: 0;
+      padding-right: 28px;
     }
     .matrix-app-main { min-width: 0; }
+    .matrix-core-row > td:first-child::before {
+      content: "";
+      position: absolute;
+      top: 8px;
+      bottom: 8px;
+      left: 0;
+      width: 2px;
+      border-radius: 999px;
+      background: rgba(251, 191, 36, 0.78);
+    }
     .matrix-table {
       width: max-content;
       min-width: 980px;
@@ -607,6 +629,11 @@
       text-align: center;
       font-weight: 800;
       color: var(--text);
+    }
+    .matrix-cell.clickable { cursor: pointer; }
+    .matrix-cell.clickable.active {
+      outline: 1px solid rgba(238, 246, 245, 0.72);
+      outline-offset: -1px;
     }
     .matrix-cell.empty { color: rgba(148, 163, 184, 0.25); }
     .matrix-app-name { font-weight: 800; color: var(--text); overflow-wrap: anywhere; }
@@ -679,11 +706,52 @@
       font-size: 0.68rem;
     }
     .heatmap-fit .matrix-sub { display: none; }
-    .heatmap-fit .matrix-app-cell { gap: 4px; }
+    .heatmap-fit .matrix-app-cell { padding-right: 22px; }
     .heatmap-fit .matrix-core-star {
       width: 22px;
       height: 22px;
       font-size: 0.78rem;
+    }
+    .heatmap-popover-root {
+      position: fixed;
+      inset: 0;
+      z-index: 90;
+      pointer-events: none;
+    }
+    .heatmap-popover {
+      position: absolute;
+      width: min(280px, calc(100vw - 24px));
+      padding: 10px 12px;
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      border-radius: var(--radius);
+      background: rgba(9, 18, 22, 0.98);
+      box-shadow: 0 18px 48px rgba(0, 0, 0, 0.38);
+      color: var(--text-soft);
+      font-size: 0.78rem;
+      pointer-events: auto;
+      max-height: min(360px, calc(100vh - 24px));
+      overflow-y: auto;
+    }
+    .heatmap-popover-title {
+      margin-bottom: 8px;
+      color: var(--text);
+      font-weight: 800;
+      overflow-wrap: anywhere;
+    }
+    .heatmap-popover-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 4px 0;
+      border-top: 1px solid rgba(148, 163, 184, 0.08);
+    }
+    .heatmap-popover-row:first-of-type { border-top: 0; }
+    .heatmap-popover-label { color: var(--text-muted); }
+    .heatmap-popover-value {
+      color: var(--text);
+      font-weight: 800;
+      text-align: right;
+      overflow-wrap: anywhere;
     }
     .daily-runner-list {
       margin-top: 12px;
@@ -692,7 +760,71 @@
       border-radius: var(--radius);
       background: rgba(15, 23, 28, 0.42);
     }
-    .daily-runner-title { margin-bottom: 8px; font-weight: 800; }
+    .daily-runner-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+      font-weight: 800;
+    }
+    .daily-runner-title > span:first-child { color: var(--text); }
+    .runner-list-more {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 12px;
+      margin-top: 10px;
+      color: var(--text-muted);
+      font-size: 0.78rem;
+    }
+    .info-pill {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 9px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: rgba(15, 23, 28, 0.56);
+      color: var(--text-muted);
+      font-weight: 600;
+      font-size: 0.74rem;
+      cursor: help;
+    }
+    .info-pill-tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 1px 6px;
+      border-radius: 999px;
+      background: rgba(34, 211, 238, 0.16);
+      color: #a5f3fc;
+      font-size: 0.7rem;
+    }
+    .info-tip {
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 50%;
+      transform: translateX(-50%);
+      width: max-content;
+      max-width: 240px;
+      padding: 7px 10px;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius);
+      background: rgba(9, 18, 22, 0.98);
+      color: var(--text-soft);
+      font-size: 0.76rem;
+      font-weight: 500;
+      line-height: 1.45;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.42);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 120ms ease;
+      z-index: 60;
+      white-space: normal;
+    }
+    .info-pill:hover .info-tip,
+    .info-pill:focus-within .info-tip { opacity: 1; }
     .boss-link {
       display: inline-flex;
       justify-content: center;
@@ -808,6 +940,7 @@
 </div>
 <div class="drawer-backdrop" id="drawer-backdrop"></div>
 <aside class="drawer" id="drawer" aria-hidden="true"></aside>
+<div class="heatmap-popover-root" id="heatmap-popover-root"></div>
 
 <script>
 const reportData = "__REPORT_DATA_PLACEHOLDER__";
@@ -950,14 +1083,17 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
     runInsightFullscreen: false,
     runInsightPeriod: "30d",
     runInsightOverviewScope: "all",
-    runInsightMatrixScope: "core",
+    runInsightAppScope: "core",
     runInsightCellMetric: "runCnt",
     runInsightAppSearch: "",
     runInsightRunnerSearch: "",
     runInsightRowSort: "core",
     runInsightColSort: "runCnt",
+    runInsightRunnerRowSort: "activeDays",
     runInsightMatrixFit: false,
-    runInsightRunnerFit: false
+    runInsightRunnerFit: false,
+    runInsightRunnerListExpanded: false,
+    runInsightActiveCell: null
   };
   const chartInstances = new Map();
   const drawerCharts = new Map();
@@ -2381,18 +2517,17 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
       return b.runCnt - a.runCnt || b.durationSeconds - a.durationSeconds || String(a.appName || "").localeCompare(String(b.appName || ""), "zh-CN");
     });
   }
-  function runInsightScopeApps(client, insight, apps, scope, fallbackTop) {
+  function runInsightScopeApps(client, insight, apps, scope) {
     const query = state.runInsightAppSearch.trim().toLowerCase();
     let rows = apps.filter(app => !query || String(app.appName || "").toLowerCase().includes(query) || String(app.appUuid || "").toLowerCase().includes(query));
     const coreSet = runInsightCoreSet(client, insight);
     if (scope === "core") {
-      const coreRows = rows.filter(app => coreSet.has(app.appUuid));
-      rows = coreRows.length || !fallbackTop ? coreRows : rows.slice().sort((a, b) => b.runCnt - a.runCnt).slice(0, 10);
+      rows = rows.filter(app => coreSet.has(app.appUuid));
     }
     return sortRunInsightApps(client, insight, rows);
   }
   function runInsightSelectedAppSet(client, insight, apps, scope) {
-    return new Set(runInsightScopeApps(client, insight, apps, scope, true).map(app => app.appUuid));
+    return new Set(runInsightScopeApps(client, insight, apps, scope).map(app => app.appUuid));
   }
   function runInsightPairRows(insight, dates, appSet) {
     const dateSet = new Set(dates);
@@ -2426,6 +2561,14 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
       return b.runCnt - a.runCnt || b.activeDays - a.activeDays || String(a.runnerAccount || "").localeCompare(String(b.runnerAccount || ""), "zh-CN");
     });
   }
+  function sortRunInsightActivityRunners(runners) {
+    return runners.slice().sort((a, b) => {
+      if (state.runInsightRunnerRowSort === "runCnt") return b.runCnt - a.runCnt || b.activeDays - a.activeDays;
+      if (state.runInsightRunnerRowSort === "lastRunAt") return String(b.lastRunAt || "").localeCompare(String(a.lastRunAt || ""));
+      if (state.runInsightRunnerRowSort === "name") return String(a.runnerName || a.runnerAccount || "").localeCompare(String(b.runnerName || b.runnerAccount || ""), "zh-CN");
+      return b.activeDays - a.activeDays || b.runCnt - a.runCnt;
+    });
+  }
   function runnerMatchesQuery(runner, query) {
     if (!query) return true;
     const q = query.toLowerCase();
@@ -2444,6 +2587,54 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
     if (!value || !max) return "transparent";
     const alpha = Math.min(0.88, 0.16 + (value / max) * 0.72);
     return "rgba(" + hue + "," + alpha.toFixed(3) + ")";
+  }
+  function runInsightHeatmapScopeControls() {
+    return '<div class="drawer-toolbar-group"><span class="control-label">应用范围</span>' +
+      [{ key: "core", label: "核心应用" }, { key: "all", label: "全部应用" }].map(s => '<button class="metric-tab' + (state.runInsightAppScope === s.key ? " active" : "") + '" data-run-app-scope="' + s.key + '" type="button">' + s.label + '</button>').join("") +
+      '</div>';
+  }
+  function runInsightCoreEmptyHtml() {
+    return '<div class="empty">尚未标记核心应用，可在核心应用概览中标记，或切换到全部应用查看。</div>';
+  }
+  function heatmapPopoverDataAttr(data) {
+    return escapeHtml(encodeURIComponent(JSON.stringify(data)));
+  }
+  function heatmapPopoverHtml() {
+    const pop = state.runInsightActiveCell;
+    if (!pop) return "";
+    const x = Math.max(12, Math.min(Number(pop.x || 12), window.innerWidth - 292));
+    const y = Math.max(12, Math.min(Number(pop.y || 12), window.innerHeight - 220));
+    const rows = (pop.rows || []).map(row =>
+      '<div class="heatmap-popover-row"><span class="heatmap-popover-label">' + escapeHtml(row.label) + '</span><span class="heatmap-popover-value">' + escapeHtml(row.value) + '</span></div>'
+    ).join("");
+    return '<div class="heatmap-popover" role="dialog" style="left:' + x + 'px;top:' + y + 'px">' +
+      '<div class="heatmap-popover-title">' + escapeHtml(pop.title || "运行详情") + '</div>' +
+      rows +
+    '</div>';
+  }
+  function renderHeatmapPopoverRoot() {
+    const root = document.getElementById("heatmap-popover-root");
+    if (root) root.innerHTML = heatmapPopoverHtml();
+  }
+  function clearHeatmapPopover() {
+    state.runInsightActiveCell = null;
+    document.querySelectorAll(".matrix-cell.clickable.active").forEach(cell => cell.classList.remove("active"));
+    const root = document.getElementById("heatmap-popover-root");
+    if (root) root.innerHTML = "";
+  }
+  function positionHeatmapPopover(cell) {
+    const rect = cell.getBoundingClientRect();
+    const popW = 292;
+    const popH = 220;
+    const gap = 8;
+    let x = rect.right + gap;
+    let y = rect.top;
+    if (x + popW > window.innerWidth - 12) x = rect.left - popW - gap;
+    if (y + popH > window.innerHeight - 12) y = window.innerHeight - popH - 12;
+    return {
+      x: Math.max(12, Math.min(x, window.innerWidth - popW - 12)),
+      y: Math.max(12, Math.min(y, window.innerHeight - 40))
+    };
   }
   function drawerTabsHtml() {
     const tabs = [
@@ -2509,16 +2700,16 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
       '<section class="drawer-section">' +
         '<h3>运行洞察</h3>' +
         '<div class="run-insight-copy">只基于真实运行明细聚合：核心应用标记保存在当前浏览器；运行状态、启动方式、运行方式暂不参与判断。</div>' +
-        '<div class="run-insight-controls">' + runInsightPeriodControls() + '</div>' +
+        '<div class="run-insight-controls">' + runInsightPeriodControls() + runInsightHeatmapScopeControls() + '</div>' +
       '</section>' +
       runInsightAppOverviewHtml(client, insight, dates) +
-      runInsightMatrixHtml(client, insight, dates) +
       runInsightRunnerActivityHtml(client, insight, dates) +
+      runInsightMatrixHtml(client, insight, dates) +
     '</div>';
   }
   function runInsightAppOverviewHtml(client, insight, dates) {
     const apps = runInsightAppSummaries(insight, dates);
-    const scoped = runInsightScopeApps(client, insight, apps, state.runInsightOverviewScope === "core" ? "core" : "all", false).slice(0, 80);
+    const scoped = runInsightScopeApps(client, insight, apps, state.runInsightOverviewScope === "core" ? "core" : "all").slice(0, 80);
     return '<section class="drawer-section">' +
       '<div class="section-header"><h3>核心应用概览</h3><div class="section-desc">帮助 CSM 轻量标记核心应用</div></div>' +
       '<div class="run-insight-controls">' +
@@ -2543,11 +2734,12 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
   function runInsightMatrixHtml(client, insight, dates) {
     const allApps = runInsightAppSummaries(insight, dates);
     const runnerQuery = state.runInsightRunnerSearch.trim();
-    let visibleApps = runInsightScopeApps(client, insight, allApps, state.runInsightMatrixScope, true).slice(0, 50);
+    const noCoreApps = state.runInsightAppScope === "core" && !runInsightCoreSet(client, insight).size;
+    let visibleApps = runInsightScopeApps(client, insight, allApps, state.runInsightAppScope).slice(0, 50);
     let appSet = new Set(visibleApps.map(app => app.appUuid));
     let pairRows = runInsightPairRows(insight, dates, appSet);
     let runnerSummaries = sortRunInsightRunners(runInsightRunnerSummaries(pairRows)).filter(r => runnerMatchesQuery(r, runnerQuery));
-    if (runnerQuery && !runnerSummaries.length) {
+    if (runnerQuery && !runnerSummaries.length && state.runInsightAppScope !== "core") {
       const allRows = runInsightPairRows(insight, dates, null);
       const matchedRunnerIds = new Set(runInsightRunnerSummaries(allRows).filter(r => runnerMatchesQuery(r, runnerQuery)).map(r => r.runnerUuid));
       if (matchedRunnerIds.size) {
@@ -2570,11 +2762,8 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
     const maxValue = Math.max(0, ...Array.from(cells.values()).map(runInsightCellValue));
     const fitClass = state.runInsightMatrixFit ? " heatmap-fit" : "";
     return '<section class="drawer-section">' +
-      '<div class="section-header"><h3>核心应用 x 运行者矩阵</h3><div class="section-desc">默认核心应用；未标记时自动展示运行次数 Top 10</div></div>' +
+      '<div class="section-header"><h3>核心应用 x 运行者矩阵</h3><div class="section-desc">查看应用被哪些真实账号运行</div></div>' +
       '<div class="run-insight-controls">' +
-        '<div class="drawer-toolbar-group"><span class="control-label">应用范围</span>' +
-          [{ key: "core", label: "核心应用" }, { key: "all", label: "全部应用" }].map(s => '<button class="metric-tab' + (state.runInsightMatrixScope === s.key ? " active" : "") + '" data-matrix-scope="' + s.key + '" type="button">' + s.label + '</button>').join("") +
-        '</div>' +
         '<div class="drawer-toolbar-group"><span class="control-label">单元格</span>' +
           [{ key: "runCnt", label: "运行次数" }, { key: "durationSeconds", label: "运行时长" }].map(s => '<button class="metric-tab' + (state.runInsightCellMetric === s.key ? " active" : "") + '" data-cell-metric="' + s.key + '" type="button">' + s.label + '</button>').join("") +
         '</div>' +
@@ -2583,6 +2772,7 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
         '<label class="run-insight-field"><span class="control-label">列排序</span><select class="run-insight-select" id="run-insight-col-sort"><option value="runCnt"' + (state.runInsightColSort === "runCnt" ? " selected" : "") + '>账号总运行次数</option><option value="appCount"' + (state.runInsightColSort === "appCount" ? " selected" : "") + '>覆盖应用数</option><option value="lastRunAt"' + (state.runInsightColSort === "lastRunAt" ? " selected" : "") + '>最近运行</option></select></label>' +
         '<input class="run-insight-search" id="run-insight-runner-search" type="search" placeholder="搜索运行账号/名称" value="' + escapeHtml(state.runInsightRunnerSearch) + '">' +
       '</div>' +
+      (noCoreApps ? runInsightCoreEmptyHtml() :
       '<div class="run-insight-table-wrap heatmap-wrap' + fitClass + '"><table class="matrix-table heatmap-table"><thead><tr><th>应用 / 运行者</th>' +
         runners.map(r => {
           const fullName = r.runnerName || r.runnerAccount || r.runnerUuid;
@@ -2591,23 +2781,35 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
           return '<th class="runner-head" title="' + escapeHtml(title) + '"><div class="runner-name">' + escapeHtml(headName) + '</div><div class="matrix-sub">' + escapeHtml(r.runnerAccount || r.runnerUuid) + '</div><div class="matrix-sub">' + formatNumber(r.runCnt) + '次 · ' + formatNumber(r.appCount) + '应用</div></th>';
         }).join("") +
       '</tr></thead><tbody>' +
-        (visibleApps.length && runners.length ? visibleApps.map(app => '<tr><td>' +
-          '<div class="matrix-app-cell" title="' + escapeHtml(app.appName + '\n' + app.appUuid) + '">' + coreStarHtml(client, insight, app, "matrix") + '<div class="matrix-app-main"><div class="matrix-app-name">' + escapeHtml(state.runInsightMatrixFit ? compactText(app.appName, 10) : app.appName) + '</div><div class="matrix-sub">' + formatNumber(app.runCnt) + '次 · ' + formatNumber(app.runnerCount) + '人 · 最近 ' + shortDateTime(app.lastRunAt) + '</div></div></div>' +
+        (visibleApps.length && runners.length ? visibleApps.map(app => '<tr' + (isCoreApp(client, insight, app.appUuid) ? ' class="matrix-core-row"' : "") + '><td>' +
+          '<div class="matrix-app-cell">' + coreStarHtml(client, insight, app, "matrix") + '<div class="matrix-app-main"><div class="matrix-app-name">' + escapeHtml(state.runInsightMatrixFit ? compactText(app.appName, 10) : app.appName) + '</div><div class="matrix-sub">' + formatNumber(app.runCnt) + '次 · ' + formatNumber(app.runnerCount) + '人 · 最近 ' + shortDateTime(app.lastRunAt) + '</div></div></div>' +
         '</td>' + runners.map(r => {
           const agg = cells.get(app.appUuid + "::" + r.runnerUuid);
           if (!agg || !agg.runCnt) return '<td class="matrix-cell empty">-</td>';
           const item = finalizeInsightAgg(agg);
-          const title = '运行次数：' + item.runCnt + '\n运行时长：' + runInsightDuration(item.durationSeconds) + '\n活跃天数：' + item.activeDays + '\n首次运行：' + item.firstRunAt + '\n最近运行：' + item.lastRunAt;
-          return '<td class="matrix-cell" title="' + escapeHtml(title) + '" style="background:' + heatColor(runInsightCellValue(item), maxValue, "34,211,238") + '">' + (state.runInsightMatrixFit ? "" : runInsightCellDisplay(item)) + '</td>';
+          const cellId = "matrix::" + app.appUuid + "::" + r.runnerUuid;
+          const popover = {
+            title: app.appName + " · " + (r.runnerAccount || r.runnerName || r.runnerUuid),
+            rows: [
+              { label: "运行次数", value: formatNumber(item.runCnt) },
+              { label: "运行时长", value: runInsightDuration(item.durationSeconds) },
+              { label: "活跃天数", value: formatNumber(item.activeDays) },
+              { label: "首次运行", value: item.firstRunAt || "-" },
+              { label: "最近运行", value: item.lastRunAt || "-" }
+            ]
+          };
+          const active = state.runInsightActiveCell && state.runInsightActiveCell.id === cellId ? " active" : "";
+          return '<td class="matrix-cell clickable' + active + '" data-heatmap-cell="' + escapeHtml(cellId) + '" data-popover="' + heatmapPopoverDataAttr(popover) + '" style="background:' + heatColor(runInsightCellValue(item), maxValue, "34,211,238") + '">' + (state.runInsightMatrixFit ? "" : runInsightCellDisplay(item)) + '</td>';
         }).join("") + '</tr>').join("") : '<tr><td colspan="' + (runners.length + 1) + '">当前筛选下没有矩阵数据</td></tr>') +
-      '</tbody></table></div>' +
+      '</tbody></table></div>') +
     '</section>';
   }
   function runInsightRunnerActivityHtml(client, insight, dates) {
     const allApps = runInsightAppSummaries(insight, dates);
-    const appSet = runInsightSelectedAppSet(client, insight, allApps, state.runInsightMatrixScope);
+    const noCoreApps = state.runInsightAppScope === "core" && !runInsightCoreSet(client, insight).size;
+    const appSet = runInsightSelectedAppSet(client, insight, allApps, state.runInsightAppScope);
     const rows = runInsightPairRows(insight, dates, appSet);
-    const runners = sortRunInsightRunners(runInsightRunnerSummaries(rows)).slice(0, state.runInsightRunnerFit ? 120 : 80);
+    const runners = sortRunInsightActivityRunners(runInsightRunnerSummaries(rows)).slice(0, state.runInsightRunnerFit ? 120 : 80);
     const runnerSet = new Set(runners.map(r => r.runnerUuid));
     const cells = new Map();
     rows.forEach(row => {
@@ -2621,6 +2823,11 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
     const fitClass = state.runInsightRunnerFit ? " heatmap-fit" : "";
     return '<section class="drawer-section">' +
       '<div class="section-header"><h3>运行账号 x 日期活跃图</h3><div class="section-desc">看每日活跃账号背后是不是同一批人在用</div></div>' +
+      '<div class="run-insight-controls">' +
+        '<button class="metric-tab' + (state.runInsightRunnerFit ? " active" : "") + '" data-runner-fit type="button">整体图</button>' +
+        '<label class="run-insight-field"><span class="control-label">行排序</span><select class="run-insight-select" id="run-insight-runner-row-sort"><option value="activeDays"' + (state.runInsightRunnerRowSort === "activeDays" ? " selected" : "") + '>活跃天数</option><option value="runCnt"' + (state.runInsightRunnerRowSort === "runCnt" ? " selected" : "") + '>运行次数</option><option value="lastRunAt"' + (state.runInsightRunnerRowSort === "lastRunAt" ? " selected" : "") + '>最近运行</option><option value="name"' + (state.runInsightRunnerRowSort === "name" ? " selected" : "") + '>账号名称</option></select></label>' +
+      '</div>' +
+      (noCoreApps ? runInsightCoreEmptyHtml() :
       '<div class="summary-grid">' +
         summaryCard("真实运行账号", summary.runnerCount, "当前范围内有运行") +
         summaryCard("日均活跃账号", summary.avgDailyRunners.toFixed(1), "每天平均") +
@@ -2628,20 +2835,28 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
         summaryCard("新增 / 沉默", summary.newRunners + " / " + summary.silentRunners, "相对上一同长度周期") +
         summaryCard("Top3 占比", formatPercent(summary.top3Share), "Top3账号运行次数占比") +
       '</div>' +
-      '<div class="run-insight-controls"><button class="metric-tab' + (state.runInsightRunnerFit ? " active" : "") + '" data-runner-fit type="button">整体图</button></div>' +
       '<div class="run-insight-table-wrap heatmap-wrap' + fitClass + '"><table class="matrix-table heatmap-table runner-activity-table"><thead><tr><th>运行账号 / 日期</th>' +
         dates.map(d => '<th title="' + fmtDateFull(d) + '"><span class="heatmap-date static">' + escapeHtml(state.runInsightRunnerFit ? compactText(shortDate(d), 1) : shortDate(d)) + '</span></th>').join("") +
       '</tr></thead><tbody>' +
-        (runners.length ? runners.map(r => '<tr><td title="' + escapeHtml((r.runnerName || r.runnerAccount || r.runnerUuid) + '\n' + (r.runnerAccount || r.runnerUuid)) + '"><div class="runner-name">' + escapeHtml(state.runInsightRunnerFit ? compactText(r.runnerName || r.runnerAccount || r.runnerUuid, 10) : (r.runnerName || r.runnerAccount)) + '</div><div class="matrix-sub">' + escapeHtml(r.runnerAccount || r.runnerUuid) + '</div><div class="matrix-sub">' + formatNumber(r.runCnt) + '次 · ' + formatNumber(r.activeDays) + '天</div></td>' +
+        (runners.length ? runners.map(r => '<tr><td><div class="runner-name">' + escapeHtml(state.runInsightRunnerFit ? compactText(r.runnerName || r.runnerAccount || r.runnerUuid, 8) : (r.runnerName || r.runnerAccount)) + '</div><div class="matrix-sub">' + escapeHtml(r.runnerAccount || r.runnerUuid) + '</div><div class="matrix-sub">' + formatNumber(r.runCnt) + '次 · ' + formatNumber(r.activeDays) + '天</div></td>' +
           dates.map(d => {
             const agg = cells.get(r.runnerUuid + "::" + d);
             if (!agg || !agg.runCnt) return '<td class="matrix-cell empty">-</td>';
             const item = finalizeInsightAgg(agg);
-            const title = '账号：' + (r.runnerAccount || r.runnerName || r.runnerUuid) + '\n日期：' + fmtDateFull(d) + '\n运行次数：' + item.runCnt + '\n运行应用数：' + item.appCount + '\n最近运行：' + shortTime(item.lastRunAt);
-            return '<td class="matrix-cell" title="' + escapeHtml(title) + '" style="background:' + heatColor(item.runCnt, maxValue, "52,211,153") + '">' + (state.runInsightRunnerFit ? "" : formatNumber(item.runCnt)) + '</td>';
+            const cellId = "runner::" + r.runnerUuid + "::" + d;
+            const popover = {
+              title: (r.runnerAccount || r.runnerName || r.runnerUuid) + " · " + fmtDateFull(d),
+              rows: [
+                { label: "运行次数", value: formatNumber(item.runCnt) },
+                { label: "运行应用数", value: formatNumber(item.appCount) },
+                { label: "最近运行", value: shortTime(item.lastRunAt) }
+              ]
+            };
+            const active = state.runInsightActiveCell && state.runInsightActiveCell.id === cellId ? " active" : "";
+            return '<td class="matrix-cell clickable' + active + '" data-heatmap-cell="' + escapeHtml(cellId) + '" data-popover="' + heatmapPopoverDataAttr(popover) + '" style="background:' + heatColor(item.runCnt, maxValue, "52,211,153") + '">' + (state.runInsightRunnerFit ? "" : formatNumber(item.runCnt)) + '</td>';
           }).join("") + '</tr>').join("") : '<tr><td colspan="' + (dates.length + 1) + '">当前筛选下没有运行账号数据</td></tr>') +
       '</tbody></table></div>' +
-      runInsightPeriodRunnerListHtml(client, insight, rows, dates) +
+      runInsightPeriodRunnerListHtml(client, insight, rows, dates)) +
     '</section>';
   }
   function runInsightRunnerActivitySummary(insight, dates, appSet) {
@@ -2687,11 +2902,34 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
       coreRunCnt: agg.coreRunCnt || 0
     }, finalizeInsightAgg(agg))).sort((a, b) => b.runCnt - a.runCnt);
     const rangeLabel = dates.length ? fmtDateFull(dates[0]) + " ~ " + fmtDateFull(dates[dates.length - 1]) : "当前时间段";
-    const visibleItems = items.slice(0, 50);
-    return '<div class="daily-runner-list"><div class="daily-runner-title">当前时间段活跃账号 · ' + formatNumber(items.length) + ' 个 <span class="matrix-sub">' + escapeHtml(rangeLabel) + '</span></div>' +
+    const collapsedLimit = 8;
+    const expandedLimit = 50;
+    const isExpanded = !!state.runInsightRunnerListExpanded;
+    const visibleItems = items.slice(0, isExpanded ? expandedLimit : collapsedLimit);
+    const hasMore = items.length > collapsedLimit;
+    const appScopeLabel = state.runInsightAppScope === "core" ? "核心应用" : "全部应用";
+    const titleHint = '活跃 = ' + appScopeLabel + '范围内运行次数 ≥ 1 的账号';
+    return '<div class="daily-runner-list">' +
+      '<div class="daily-runner-title">' +
+        '<span>当前时间段活跃账号 · ' + formatNumber(items.length) + ' 个</span>' +
+        '<span class="matrix-sub">' + escapeHtml(rangeLabel) + '</span>' +
+        '<span class="info-pill" title="' + escapeHtml(titleHint) + '">' +
+          '<span class="info-pill-tag">活跃</span>运行次数 ≥ 1' +
+          '<span class="info-tip" role="tooltip">' + escapeHtml(titleHint) + '</span>' +
+        '</span>' +
+      '</div>' +
       '<div class="run-insight-table-wrap"><table class="run-insight-table period-runner-table"><thead><tr><th>账号</th><th>运行次数</th><th>运行应用数</th><th>核心应用运行次数</th><th>活跃天数</th><th>最近运行</th></tr></thead><tbody>' +
         (visibleItems.length ? visibleItems.map(item => '<tr><td>' + escapeHtml(item.runnerName || item.runnerAccount) + '<div class="matrix-sub">' + escapeHtml(item.runnerAccount || item.runnerUuid) + '</div></td><td>' + formatNumber(item.runCnt) + '</td><td>' + formatNumber(item.appCount) + '</td><td>' + formatNumber(item.coreRunCnt) + '</td><td>' + formatNumber(item.activeDays) + '</td><td>' + shortDateTime(item.lastRunAt) + '</td></tr>').join("") : '<tr><td colspan="6">当前时间段没有活跃账号</td></tr>') +
-      '</tbody></table></div></div>';
+      '</tbody></table></div>' +
+      (hasMore ?
+        (isExpanded
+          ? '<div class="runner-list-more">' +
+              (items.length > expandedLimit ? '+' + formatNumber(items.length - expandedLimit) + ' 更多，去 BOSS 查完整明细' : '') +
+              '<button class="ghost-btn" data-runner-list-toggle type="button">收起</button>' +
+            '</div>'
+          : '<div class="runner-list-more"><button class="ghost-btn" data-runner-list-toggle type="button">展开全部 ' + formatNumber(items.length) + ' 个活跃账号</button></div>')
+        : '') +
+    '</div>';
   }
   function openDrawer(clientName) {
     const client = currentClients.find(c => c.name === clientName) || getClients(state.mode === "diagnosis" ? periodRange("period") : periodRange()).find(c => c.name === clientName);
@@ -2705,12 +2943,14 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
     state.drawerComparison = state.mode === "diagnosis" ? "period" : state.comparison;
     state.drawerTab = "metrics";
     state.runInsightFullscreen = false;
+    clearHeatmapPopover();
     initDrawerDateState();
     renderDrawer(client);
   }
   function closeDrawer() {
     state.drawerClientName = "";
     state.runInsightFullscreen = false;
+    clearHeatmapPopover();
     disposeDrawerCharts();
     const drawer = document.getElementById("drawer");
     const backdrop = document.getElementById("drawer-backdrop");
@@ -2759,6 +2999,7 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
     drawer.classList.toggle("fullscreen", state.drawerTab === "runInsights" && state.runInsightFullscreen);
     drawer.setAttribute("aria-hidden", "false");
     backdrop.classList.add("open");
+    renderHeatmapPopoverRoot();
     drawer.scrollTop = prevScroll;
     document.getElementById("drawer-close").onclick = closeDrawer;
     const fullscreenToggle = document.getElementById("drawer-fullscreen");
@@ -2797,6 +3038,7 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
     document.querySelectorAll("[data-drawer-tab]").forEach(btn => {
       btn.onclick = () => {
         state.drawerTab = btn.dataset.drawerTab || "metrics";
+        clearHeatmapPopover();
         renderDrawer(client, true);
       };
     });
@@ -2806,36 +3048,51 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
     document.querySelectorAll("[data-run-period]").forEach(btn => {
       btn.onclick = () => {
         state.runInsightPeriod = btn.dataset.runPeriod || "30d";
+        state.runInsightRunnerListExpanded = false;
+        state.runInsightActiveCell = null;
+        renderDrawer(client, true);
+      };
+    });
+    document.querySelectorAll("[data-run-app-scope]").forEach(btn => {
+      btn.onclick = () => {
+        state.runInsightAppScope = btn.dataset.runAppScope || "core";
+        state.runInsightRunnerListExpanded = false;
+        state.runInsightActiveCell = null;
         renderDrawer(client, true);
       };
     });
     document.querySelectorAll("[data-overview-scope]").forEach(btn => {
       btn.onclick = () => {
         state.runInsightOverviewScope = btn.dataset.overviewScope || "all";
-        renderDrawer(client, true);
-      };
-    });
-    document.querySelectorAll("[data-matrix-scope]").forEach(btn => {
-      btn.onclick = () => {
-        state.runInsightMatrixScope = btn.dataset.matrixScope || "core";
+        state.runInsightActiveCell = null;
         renderDrawer(client, true);
       };
     });
     document.querySelectorAll("[data-cell-metric]").forEach(btn => {
       btn.onclick = () => {
         state.runInsightCellMetric = btn.dataset.cellMetric || "runCnt";
+        state.runInsightActiveCell = null;
         renderDrawer(client, true);
       };
     });
     document.querySelectorAll("[data-matrix-fit]").forEach(btn => {
       btn.onclick = () => {
         state.runInsightMatrixFit = !state.runInsightMatrixFit;
+        state.runInsightActiveCell = null;
         renderDrawer(client, true);
       };
     });
     document.querySelectorAll("[data-runner-fit]").forEach(btn => {
       btn.onclick = () => {
         state.runInsightRunnerFit = !state.runInsightRunnerFit;
+        state.runInsightActiveCell = null;
+        renderDrawer(client, true);
+      };
+    });
+    document.querySelectorAll("[data-runner-list-toggle]").forEach(btn => {
+      btn.onclick = () => {
+        state.runInsightRunnerListExpanded = !state.runInsightRunnerListExpanded;
+        state.runInsightActiveCell = null;
         renderDrawer(client, true);
       };
     });
@@ -2847,13 +3104,57 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
         const appUuid = btn.dataset.coreApp;
         const app = (runInsightAppSummaries(insight, runInsightCurrentDates(insight)).find(item => item.appUuid === appUuid) || { appUuid, appName: "" });
         toggleCoreApp(client, insight, app);
+        state.runInsightActiveCell = null;
         renderDrawer(client, true);
+      };
+    });
+    document.querySelectorAll("[data-heatmap-cell]").forEach(cell => {
+      cell.onclick = event => {
+        event.preventDefault();
+        event.stopPropagation();
+        const id = cell.dataset.heatmapCell || "";
+        if (state.runInsightActiveCell && state.runInsightActiveCell.id === id) {
+          clearHeatmapPopover();
+          return;
+        }
+        let popover = {};
+        try {
+          popover = JSON.parse(decodeURIComponent(cell.dataset.popover || "%7B%7D")) || {};
+        } catch (err) {
+          popover = {};
+        }
+        const position = positionHeatmapPopover(cell);
+        document.querySelectorAll(".matrix-cell.clickable.active").forEach(item => item.classList.remove("active"));
+        cell.classList.add("active");
+        state.runInsightActiveCell = Object.assign({}, popover, {
+          id,
+          x: position.x,
+          y: position.y
+        });
+        renderHeatmapPopoverRoot();
+      };
+    });
+    const drawer = document.getElementById("drawer");
+    if (drawer) {
+      drawer.onclick = event => {
+        if (!state.runInsightActiveCell) return;
+        if (event.target.closest("[data-heatmap-cell], .heatmap-popover")) return;
+        clearHeatmapPopover();
+      };
+      drawer.onscroll = () => {
+        if (state.runInsightActiveCell) clearHeatmapPopover();
+      };
+    }
+    document.querySelectorAll(".heatmap-wrap").forEach(wrap => {
+      wrap.onscroll = () => {
+        if (state.runInsightActiveCell) clearHeatmapPopover();
       };
     });
     const appSearch = document.getElementById("run-insight-app-search");
     if (appSearch) {
       appSearch.oninput = () => {
         state.runInsightAppSearch = appSearch.value.trim();
+        state.runInsightActiveCell = null;
         renderDrawer(client, true);
       };
     }
@@ -2861,6 +3162,7 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
     if (runnerSearch) {
       runnerSearch.oninput = () => {
         state.runInsightRunnerSearch = runnerSearch.value.trim();
+        state.runInsightActiveCell = null;
         renderDrawer(client, true);
       };
     }
@@ -2868,6 +3170,7 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
     if (rowSort) {
       rowSort.onchange = () => {
         state.runInsightRowSort = rowSort.value;
+        state.runInsightActiveCell = null;
         renderDrawer(client, true);
       };
     }
@@ -2875,6 +3178,15 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
     if (colSort) {
       colSort.onchange = () => {
         state.runInsightColSort = colSort.value;
+        state.runInsightActiveCell = null;
+        renderDrawer(client, true);
+      };
+    }
+    const runnerRowSort = document.getElementById("run-insight-runner-row-sort");
+    if (runnerRowSort) {
+      runnerRowSort.onchange = () => {
+        state.runInsightRunnerRowSort = runnerRowSort.value;
+        state.runInsightActiveCell = null;
         renderDrawer(client, true);
       };
     }
@@ -3051,7 +3363,12 @@ const reportData = "__REPORT_DATA_PLACEHOLDER__";
     drawerCharts.forEach(chart => chart.resize());
   });
   document.addEventListener("keydown", event => {
-    if (event.key === "Escape") closeDrawer();
+    if (event.key !== "Escape") return;
+    if (state.runInsightActiveCell) {
+      clearHeatmapPopover();
+      return;
+    }
+    closeDrawer();
   });
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);
