@@ -299,8 +299,14 @@ xlsx 默认保存到 `/tmp`（可通过 `--output-dir` 或 config 中 `export_da
 - 哪些客户需要运营关注
 - 哪些客户使用趋势健康增长
 - 每个客户在指定指标上的独立趋势图
+- 客户真实运行账号、核心应用和应用使用扩散情况
 
 它不同于 `export_dashboard.py`：`export_dashboard.py` 是从 Boss 异步下载 xlsx；本节的 `dashboard.html` 是基于本地 JSON 数据生成的客户成功行动看板。
+
+运行洞察的详细说明见：
+
+- 面向 CSM/团队推广：[docs/run-insights-csm-guide.md](docs/run-insights-csm-guide.md)
+- 面向内部维护：[docs/run-insights-technical.md](docs/run-insights-technical.md)
 
 ### 12.1 文件职责
 
@@ -380,6 +386,7 @@ skills/yingdao-boss-data-hub/dashboard/dashboard.html
 - `runtime/yingdao-boss/latest-reports.json`：必需，客户每日指标趋势。
 - `runtime/yingdao-boss/latest-clients.json`：可选，补充客户成功负责人、服务阶段、合作状态、部署类型、续费字段。
 - `runtime/yingdao-boss/contracts-expiration-summary.json`：可选，补充临期/已过期合同信息。
+- `runtime/yingdao-boss/latest-app-run-insights.json`：可选，补充运行洞察数据，包括真实运行账号、应用运行者矩阵和账号日期活跃图。
 
 如果可选文件不存在，脚本会提示 warning，但仍会生成只包含日报趋势的看板。
 
@@ -390,6 +397,7 @@ python3 skills/yingdao-boss-data-hub/dashboard/build_data.py \
   --input ./runtime/yingdao-boss/latest-reports.json \
   --clients-input ./runtime/yingdao-boss/latest-clients.json \
   --expiration-input ./runtime/yingdao-boss/contracts-expiration-summary.json \
+  --app-run-insights-input ./runtime/yingdao-boss/latest-app-run-insights.json \
   --output ./skills/yingdao-boss-data-hub/dashboard/dashboard.html
 ```
 
@@ -430,6 +438,7 @@ CSM 诊断模式：
 
 - 点击客户卡片打开右侧详情页。
 - 详情页默认展示 9 个指标折线图。
+- 详情页包含 `运行洞察` 页签，用于查看核心应用、真实运行账号和运行扩散情况。
 - 详情页支持 1/2/3 列图表布局切换，默认 1 列。
 - 详情页有独立对比口径选择，不会影响外部看板选择。
 - 详情页图表不继承外部统一 Y 轴量纲，按单客户单指标自动适配。
@@ -437,6 +446,16 @@ CSM 诊断模式：
 - 详情页展示合同摘要，并提供 BOSS 客户详情跳转链接。
 
 看板会综合日报趋势、客户主数据和合同到期摘要；当客户主数据或到期摘要缺失时，会降级展示日报趋势。
+
+运行洞察：
+
+- 基于 BOSS 详细 Excel 导出的 `运行明细数据` sheet 聚合生成。
+- 解析脚本为 `skills/yingdao-boss-data-hub/scripts/build_app_run_insights.py`。
+- 默认读取 `runtime/yingdao-boss/latest-app-run-insights.json`。
+- 只使用应用、真实运行者、运行开始时间和运行时长等聚合口径。
+- V1 不使用运行状态、启动方式、运行方式做判断。
+- 核心应用标记保存在当前浏览器 `localStorage`，不写回 BOSS，也不做团队共享。
+- 如果客户没有运行明细数据，运行洞察会展示空态，不影响其他看板模块。
 
 ### 12.6 浏览器本地配置
 
@@ -447,6 +466,7 @@ CSM 诊断模式：
 | `dashboard_card_fields` | 卡片字段显示配置 |
 | `dashboard_drawer_width` | 客户详情页宽度 |
 | `dashboard_drawer_chart_columns` | 客户详情页指标图列数 |
+| `dashboard_core_apps_v1` | 运行洞察核心应用标记，按客户 `organizationUuid` 隔离 |
 
 如需恢复默认，可在页面内使用对应的恢复默认操作，或清理浏览器 localStorage。
 

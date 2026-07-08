@@ -73,6 +73,7 @@ Default shared dataset locations:
 ```text
 runtime/yingdao-boss/latest-clients.json
 runtime/yingdao-boss/latest-contracts.json
+runtime/yingdao-boss/latest-app-run-insights.json
 ```
 
 These files are the handoff point for the downstream analysis skill.
@@ -180,6 +181,29 @@ python3 skills/yingdao-boss-data-hub/scripts/fetch_tenant_reports.py \
   --end-date "20260615"
 ```
 
+### Building App Run Insights from Detailed XLSX Exports
+
+The customer success dashboard can optionally show `运行洞察` in the client drawer.
+This feature is based on detailed BOSS XLSX exports, not on the normal daily report API.
+
+Generate app run insight aggregates from a downloaded tenant dashboard XLSX:
+
+```bash
+python skills/yingdao-boss-data-hub/scripts/build_app_run_insights.py \
+  runtime/yingdao-boss/客户数据看板.xlsx \
+  --output runtime/yingdao-boss/latest-app-run-insights.json \
+  --client-name "客户名称" \
+  --organization-uuid "organizationUuid" \
+  --custom-no "客户编号"
+```
+
+The dashboard builder treats `latest-app-run-insights.json` as optional. If it is missing, the dashboard still builds and the `运行洞察` tab shows an empty state for clients without detailed run data.
+
+Run insight user and maintenance docs:
+
+- `skills/yingdao-boss-data-hub/docs/run-insights-csm-guide.md`
+- `skills/yingdao-boss-data-hub/docs/run-insights-technical.md`
+
 ### Building the Customer Success Action Dashboard
 
 Use the static dashboard workflow when the user wants to inspect client-success risk, renewal follow-up priority, per-client daily metric trends, or the generated customer-success workbench.
@@ -207,6 +231,7 @@ The dashboard builder reads:
 - `runtime/yingdao-boss/latest-reports.json` (required): daily tenant report rows and metric trends
 - `runtime/yingdao-boss/latest-clients.json` (optional): CS owner, service stage, cooperation status, deployment type, renewal metadata
 - `runtime/yingdao-boss/contracts-expiration-summary.json` (optional): near-expiration contract buckets and contract details
+- `runtime/yingdao-boss/latest-app-run-insights.json` (optional): detailed app-run aggregates for `运行洞察`
 
 It writes the self-contained static dashboard:
 
@@ -235,11 +260,13 @@ Current dashboard behavior:
 - Service stage filtering defaults to hiding lost/expired customers.
 - `CSM 诊断` Top 10 excludes expired recovery and data-check queues.
 - Customer cards open a drawer with all 9 metric trend charts, contract summary, and BOSS detail link.
+- Customer drawers include the optional `运行洞察` tab when detailed app-run data is available.
 - The drawer has independent comparison controls, independent Y-axis scaling, configurable chart columns, and persisted width.
 - Browser-local settings use `localStorage` keys:
   - `dashboard_card_fields`
   - `dashboard_drawer_width`
   - `dashboard_drawer_chart_columns`
+  - `dashboard_core_apps_v1`
 
 ## Output format
 
