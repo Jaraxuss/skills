@@ -6,7 +6,6 @@ import math
 import sys
 import time
 import os
-import concurrent.futures
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -180,16 +179,10 @@ def fetch_contracts_for_clients(config: dict[str, Any], clients: list[dict[str, 
             
         return client_contracts
 
-    # Use ThreadPoolExecutor to fetch clients concurrently
-    max_workers = config.get("network", {}).get("max_threads", 5)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(fetch_single_client, cno, i, len(unique_clients)) for i, cno in enumerate(unique_clients, 1)]
-        for future in concurrent.futures.as_completed(futures):
-            try:
-                result = future.result()
-                all_contracts.extend(result)
-            except Exception as e:
-                print(f"Error fetching contract: {e}", file=sys.stderr)
+    # Fetch serially to avoid triggering Boss gateway rate limits.
+    for idx, custom_no in enumerate(unique_clients, 1):
+        result = fetch_single_client(custom_no, idx, len(unique_clients))
+        all_contracts.extend(result)
 
     return all_contracts
 

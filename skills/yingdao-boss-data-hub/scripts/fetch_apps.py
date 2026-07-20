@@ -16,7 +16,6 @@ import json
 import sys
 import os
 import time
-import concurrent.futures
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -227,16 +226,10 @@ def fetch_apps_for_clients(config: dict[str, Any], clients: list[dict[str, Any]]
             
         return client_apps
 
-    # Use ThreadPoolExecutor to fetch clients concurrently
-    max_workers = config.get("network", {}).get("max_threads", 5)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(fetch_single_client, c, i, len(unique_clients)) for i, c in enumerate(unique_clients, 1)]
-        for future in concurrent.futures.as_completed(futures):
-            try:
-                result = future.result()
-                all_apps.extend(result)
-            except Exception as e:
-                print(f"Error executing fetch task: {e}", file=sys.stderr)
+    # Fetch serially to avoid triggering Boss gateway rate limits.
+    for idx, client_info in enumerate(unique_clients, 1):
+        result = fetch_single_client(client_info, idx, len(unique_clients))
+        all_apps.extend(result)
 
     return all_apps
 
