@@ -158,6 +158,7 @@ def build_markdown(clients_data: dict, contract_summary: dict, tz_name: str, as_
 
     bucket_30 = contract_summary.get("0-30 Days") or []
     bucket_60 = contract_summary.get("31-60 Days") or []
+    bucket_90 = contract_summary.get("61-90 Days") or []
 
     lines: list[str] = []
     lines.append("**续费与流失防范（日常自动版）**")
@@ -193,6 +194,27 @@ def build_markdown(clients_data: dict, contract_summary: dict, tz_name: str, as_
     lines.append(f"**31-60天（{len(bucket_60)}家）**")
     if bucket_60:
         for item in bucket_60:
+            details = "；".join(
+                part.strip().replace("\r", "")
+                for detail in item.get("order_details", [])
+                for part in str(detail).split("\n")
+                if part.strip()
+            )
+            order_types = " / ".join(item.get("order_types", []) or []) or "未标注"
+            lines.append(f"- **{item.get('client_name', '(未命名客户)')}**｜剩余 **{item.get('days_remaining', '?')} 天**")
+            lines.append(f"  合同编号：`{item.get('latest_contract_no', '未知')}`")
+            lines.append(f"  订单起止：`{item.get('min_start_date', '未知')}` 至 `{item.get('max_end_date', '未知')}`")
+            lines.append(f"  金额：**{fmt_amount(item.get('total_amount'))}**｜类型：**{order_types}**")
+            lines.append(f"  详情：{details or '暂无'}")
+            lines.append(f"  BOSS链接：{boss_markdown_link(item.get('organization_uuid'))}")
+    else:
+        lines.append("- 暂无")
+
+    lines.append("")
+    lines.append("")
+    lines.append(f"**61-90天（{len(bucket_90)}家）**")
+    if bucket_90:
+        for item in bucket_90:
             details = "；".join(
                 part.strip().replace("\r", "")
                 for detail in item.get("order_details", [])

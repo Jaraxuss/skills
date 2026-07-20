@@ -133,9 +133,9 @@ python3 skills/yingdao-boss-data-hub/scripts/analyze_expiring_orders.py
 This script:
 1. Groups all records by client.
 2. Identifies the "latest contract" per client.
-3. Filters their orders down to valid subscription types (`new`, `renew`, `add`).
+3. Filters their orders down to valid main subscription types (`new`, `renew`); `add` upsell orders do not override the main subscription expiration date.
 4. Extracts the minimum start date, maximum expiration date, and sum of those valid items.
-5. Groups clients into categories (`Expired (已过期)`, `0-30 Days`, `31-60 Days`). Clients expired for more than 30 days are automatically hidden.
+5. Groups clients into categories (`Expired (已过期)`, `0-30 Days`, `31-60 Days`, `61-90 Days`). Clients expired for more than 30 days are automatically hidden.
 6. Prints the results securely to the console and outputs `contracts-expiration-summary.json` inside the `runtime/yingdao-boss` directory.
 
 ### Fetching App Dashboards (Application Lists)

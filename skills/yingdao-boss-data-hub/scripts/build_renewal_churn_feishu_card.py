@@ -356,6 +356,7 @@ def build_card(clients_data: dict, contract_summary: dict, tz_name: str, as_of: 
 
     bucket_30 = contract_summary.get("0-30 Days") or []
     bucket_60 = contract_summary.get("31-60 Days") or []
+    bucket_90 = contract_summary.get("61-90 Days") or []
 
     meta_md = "\n".join(
         [
@@ -389,6 +390,7 @@ def build_card(clients_data: dict, contract_summary: dict, tz_name: str, as_of: 
                 {"tag": "markdown", "content": "### <font color='blue'>1）待续费客户</font>", "margin": "0px 0px 0px 0px", "element_id": "renewal-title"},
                 build_bucket_column("30天内", "blue", "blue-50", bucket_30, client_index),
                 build_bucket_column("31-60天", "violet", "purple-50", bucket_60, client_index),
+                build_bucket_column("61-90天", "orange", "orange-50", bucket_90, client_index),
                 {
                     "tag": "markdown",
                     "content": "### <font color='purple'>2）活跃低客户</font>\n> 筛选条件：按账号饱和度升序 Top 10；RPA服务阶段 ≠ 已流失/售前阶段；RPA合作状态 ≠ 已过期/已流失；RPA部署类型 = 公有云。江苏瑞祥科技集团有限公司按瑞祥全球购超市有限公司主体活跃数据处理。",

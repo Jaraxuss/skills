@@ -153,6 +153,7 @@ def main():
         "Expired (已过期)": [],
         "0-30 Days": [],
         "31-60 Days": [],
+        "61-90 Days": [],
     }
     
     for rec in clients_with_valid_dates:
@@ -164,6 +165,8 @@ def main():
             categories["0-30 Days"].append((days_diff, rec))
         elif 31 <= days_diff <= 60:
             categories["31-60 Days"].append((days_diff, rec))
+        elif 61 <= days_diff <= 90:
+            categories["61-90 Days"].append((days_diff, rec))
             
     # 4. Sort internally from near to far, and output
     # print(f"\n======== Contract Expiration Analysis ========\n")
@@ -173,6 +176,7 @@ def main():
          "Expired (已过期)",
          "0-30 Days",
          "31-60 Days",
+         "61-90 Days",
     ]
     
     # Pre-format to a nice dictionary/array so we can also dump to JSON if needed
