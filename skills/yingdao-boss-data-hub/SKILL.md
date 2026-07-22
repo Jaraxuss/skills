@@ -60,6 +60,14 @@ This script can be executed *after* `fetch_clients.py` has run.
 5. It handles pagination, adds a `_customNo` key to track origin, and combines everything.
 6. The compiled list is saved to `runtime/yingdao-boss/latest-contracts.json`.
 
+## Customer Journey Write-Back Workflow (`create_customer_journey.py`)
+
+Use this script to write customer follow-up / journey records into BOSS CRM.
+
+1. Authenticates using Boss credentials configured in `config.local.json`.
+2. Builds and validates the payload JSON expected by `/boss/api/v3/oms/crm/customTravel/create`.
+3. Posts the record directly to BOSS CRM and returns the execution status.
+
 ## Shared-data mode
 
 Default behavior is:

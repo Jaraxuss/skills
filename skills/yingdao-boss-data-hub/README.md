@@ -12,8 +12,9 @@
 
 - 使用 Boss 平台账号密码进行登录认证
 - 通过 `Boss accessToken -> asCode -> AppStudio accessToken` 完成鉴权链路
-- 按业务组抓取客户表数据
+- 按业务组抓取客户表及合同订单数据
 - 自动处理分页，拉取全部客户记录
+- 支持向 BOSS CRM 系统回写/创建客户旅程跟进记录 (`create_customer_journey.py`)
 - 将结果输出为统一结构的 JSON 文件
 - 默认只保留一份 **最新共享数据**，避免不断生成历史文件占用磁盘
 - 为后续“分析类 skill”提供稳定的数据输入
@@ -61,6 +62,8 @@ skills/
     │   └── api-notes.md
     └── scripts/
         ├── fetch_clients.py
+        ├── fetch_contracts.py
+        ├── create_customer_journey.py
         ├── export_dashboard.py
         └── requirements.txt
 ```
@@ -71,7 +74,9 @@ skills/
 - `README.md`：仓库说明与使用文档
 - `config.template.json`：配置模板（不含真实凭据）
 - `references/api-notes.md`：接口与存储模式说明
-- `scripts/fetch_clients.py`：主抓取脚本
+- `scripts/fetch_clients.py`：客户数据抓取脚本
+- `scripts/fetch_contracts.py`：合同订单数据抓取脚本
+- `scripts/create_customer_journey.py`：客户旅程/跟进记录回写脚本
 - `scripts/requirements.txt`：Python 依赖列表
 
 ---
