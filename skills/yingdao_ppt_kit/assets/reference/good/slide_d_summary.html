@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+  :root{
+    --red:#F0263C; --red-deep:#C9202F; --pink1:#FFF3F5; --pink2:#FFE4E9;
+    --ink:#17181C; --body:#3A3D43; --muted:#8A8F98; --line:#F2D8DC;
+  }
+  html,body{margin:0;padding:0}
+  .slide{position:relative;width:1280px;height:720px;overflow:hidden;background:#fff;
+    font-family:"PingFang SC","Hiragino Sans GB",-apple-system,"Helvetica Neue",sans-serif;}
+  .glow{position:absolute;inset:0;background:radial-gradient(560px 400px at 96% 6%, rgba(240,38,60,.05), transparent 70%)}
+  svg.texture{position:absolute;inset:0;opacity:.5}
+  .logo{position:absolute;top:38px;right:48px;height:26px}
+  .titleblock{position:absolute;left:96px;top:64px}
+  .titleblock .bar{position:absolute;left:-22px;top:7px;width:6px;height:34px;background:var(--red);border-radius:3px}
+  h1{margin:0;font-size:31px;color:var(--ink);font-weight:600}
+  .subtitle{margin-top:9px;font-size:15.5px;font-weight:600;color:var(--red)}
+  .tablewrap{position:absolute;left:96px;top:172px;width:1088px}
+  table{border-collapse:collapse;width:100%}
+  th{font-size:14.5px;color:var(--ink);font-weight:600;text-align:left;padding:10px 14px;border-bottom:2px solid var(--red)}
+  th:nth-child(2){width:190px} th:nth-child(1){width:270px}
+  td{font-size:14.5px;color:#565B63;padding:12.5px 14px;border-bottom:1px solid #F1F2F4;line-height:1.5}
+  td:first-child{color:var(--ink);font-weight:600}
+  tr:nth-child(even) td{background:#FFFBFB}
+  .pill{display:inline-block;font-size:12.5px;font-weight:600;padding:4.5px 14px;border-radius:999px}
+  .pill.yd{background:var(--red);color:#fff}
+  .pill.py{background:#2B2D33;color:#fff}
+  .pill.both{background:#fff;color:var(--red-deep);border:1.5px solid var(--red)}
+  .takeaway{position:absolute;left:96px;bottom:64px;width:1060px;background:linear-gradient(90deg,#FFF1F3,#FFF9FA);
+    border:1px solid var(--line);border-radius:14px;padding:18px 26px;display:flex;align-items:center;gap:18px;
+    box-shadow:0 8px 22px rgba(23,24,28,.05)}
+  .takeaway .mark{width:5px;height:40px;background:var(--red);border-radius:3px;flex:none}
+  .takeaway b{font-size:18px;color:var(--ink);font-weight:600;letter-spacing:.3px}
+  .takeaway b span{color:var(--red-deep)}
+  .slogan{position:absolute;left:96px;bottom:24px;font-size:11px;color:#B7BCC4;letter-spacing:.6px}
+  .pageno{position:absolute;right:52px;bottom:28px;font-size:12.5px;color:var(--red);font-weight:600}
+</style></head>
+<body><div class="slide">
+  <svg class="texture" viewBox="0 0 1280 720" fill="none">
+    <path d="M600 720 L940 260 L1280 720" stroke="#17181C" stroke-opacity="0.03" stroke-width="1.5"/>
+    <circle cx="1230" cy="96" r="120" stroke="#F0263C" stroke-opacity="0.045" stroke-width="22"/>
+  </svg>
+  <div class="glow"></div>
+  <img class="logo" src="../../yingdao_logo.png">
+  <div class="titleblock">
+    <div class="bar"></div>
+    <h1>总结：什么场景用影刀，什么场景用 Python</h1>
+    <div class="subtitle">用对工具，链路才短、稳、好维护</div>
+  </div>
+  <div class="tablewrap">
+    <table>
+      <tr><th>场景</th><th>优先方案</th><th>原因</th></tr>
+      <tr><td>系统操作与文件流转</td><td><span class="pill yd">影刀</span></td><td>登录、下载、上传、通知，流程动作清晰直观</td></tr>
+      <tr><td>简单 Excel 读写</td><td><span class="pill yd">影刀</span></td><td>第一天课程已覆盖，拖拽指令上手快</td></tr>
+      <tr><td>批量清洗与字段标准化</td><td><span class="pill py">Python · Pandas</span></td><td>规则多、数据量大时，代码规则更稳、更快</td></tr>
+      <tr><td>多表匹配 / VLOOKUP 替代</td><td><span class="pill py">Python · Pandas</span></td><td>一次 merge 带回多列，未匹配可单独输出清单</td></tr>
+      <tr><td>汇总统计与口径沉淀</td><td><span class="pill py">Python · Pandas</span></td><td>groupby 替代手工透视表，口径可复用</td></tr>
+      <tr><td>定时报表、分发与归档</td><td><span class="pill both">影刀 + Python</span></td><td>Python 产出数据，影刀负责流转、通知与留痕</td></tr>
+    </table>
+  </div>
+  <div class="takeaway">
+    <div class="mark"></div>
+    <b>判断标准：任务是<span>流程动作</span>，交给影刀；任务是<span>数据规则</span>，交给 Python —— 两段相接，才是稳定闭环。</b>
+  </div>
+  <div class="slogan">From human doing to human being.</div>
+  <div class="pageno">14</div>
+</div></body></html>

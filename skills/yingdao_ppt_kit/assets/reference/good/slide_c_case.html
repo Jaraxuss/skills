@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+  :root{
+    --red:#F0263C; --red-deep:#C9202F; --pink1:#FFF3F5; --pink2:#FFE4E9;
+    --ink:#17181C; --body:#3A3D43; --muted:#8A8F98; --line:#F2D8DC;
+  }
+  html,body{margin:0;padding:0}
+  .slide{position:relative;width:1280px;height:720px;overflow:hidden;background:#fff;
+    font-family:"PingFang SC","Hiragino Sans GB",-apple-system,"Helvetica Neue",sans-serif;}
+  .glow{position:absolute;inset:0;background:radial-gradient(560px 400px at 96% 6%, rgba(240,38,60,.05), transparent 70%)}
+  svg.texture{position:absolute;inset:0;opacity:.5}
+  .logo{position:absolute;top:38px;right:48px;height:26px}
+  .titleblock{position:absolute;left:96px;top:64px}
+  .titleblock .bar{position:absolute;left:-22px;top:7px;width:6px;height:34px;background:var(--red);border-radius:3px}
+  h1{margin:0;font-size:31px;color:var(--ink);font-weight:600}
+  .subtitle{margin-top:9px;font-size:15.5px;font-weight:600;color:var(--red)}
+  .left{position:absolute;left:96px;top:172px;width:400px}
+  .pcard{background:#fff;border:1px solid #F1E3E6;border-radius:12px;padding:16px 18px 15px;margin-bottom:14px;
+    box-shadow:0 6px 18px rgba(23,24,28,.05)}
+  .pcard .head{display:flex;align-items:center;gap:10px;margin-bottom:7px}
+  .pcard .icon{width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex:none}
+  .pcard .icon.red{background:var(--pink2)} .pcard .icon.ink{background:#EEEFF2}
+  .pcard .head b{font-size:16.5px;color:var(--ink);font-weight:600}
+  .pcard p{margin:0;font-size:13.5px;line-height:1.65;color:#565B63}
+  .pcard p b{color:var(--red-deep);font-weight:600}
+  .right{position:absolute;left:536px;top:172px;width:648px}
+  .codepanel{background:#FFF9FA;border:1px solid #F4DCE0;border-radius:12px;overflow:hidden;
+    box-shadow:0 6px 18px rgba(23,24,28,.05)}
+  .codehead{display:flex;align-items:center;gap:7px;background:#FDEFF1;padding:9px 14px;border-bottom:1px solid #F4DCE0}
+  .dot{width:9px;height:9px;border-radius:50%}
+  .codehead .fn{margin-left:8px;font-size:12px;color:#A9727B;font-family:Menlo,monospace}
+  pre{margin:0;padding:14px 18px;font:12.5px/1.62 Menlo,Consolas,monospace;color:#40363A}
+  .k{color:#C9202F;font-weight:700}.s{color:#B45909}.f{color:#7E3F98}.c{color:#8A8F98}.v{color:#0F5FA8}
+  .result{margin-top:14px;background:#fff;border:1px solid #F1E3E6;border-radius:12px;padding:12px 16px 13px;
+    box-shadow:0 6px 18px rgba(23,24,28,.05)}
+  .result .cap{font-size:13px;font-weight:600;color:var(--ink);margin-bottom:8px}
+  .result .cap span{color:var(--red);margin-right:6px}
+  table{border-collapse:collapse;width:100%}
+  th{font-size:12px;color:var(--red-deep);font-weight:600;text-align:left;padding:5px 10px;border-bottom:2px solid var(--pink2)}
+  td{font-size:12px;color:#565B63;padding:5.5px 10px;border-bottom:1px solid #F5F6F8}
+  tr:last-child td{border-bottom:none}
+  .tag{display:inline-block;background:var(--red);color:#fff;font-size:10.5px;padding:2px 8px;border-radius:99px;font-weight:600}
+  .tag.ok{background:#EDF7F0;color:#1E7A44}
+  .flow{position:absolute;left:96px;bottom:56px;display:flex;align-items:center;gap:10px}
+  .flow .step{font-size:14px;font-weight:600;color:var(--red-deep);background:var(--pink1);
+    border:1px solid var(--line);padding:9px 20px;border-radius:999px}
+  .flow .step.now{background:var(--red);border-color:var(--red);color:#fff}
+  .flow .arr{color:#E3A9B2;font-size:15px}
+  .slogan{position:absolute;left:96px;bottom:22px;font-size:11px;color:#B7BCC4;letter-spacing:.6px}
+  .pageno{position:absolute;right:52px;bottom:28px;font-size:12.5px;color:var(--red);font-weight:600}
+</style></head>
+<body><div class="slide">
+  <svg class="texture" viewBox="0 0 1280 720" fill="none">
+    <path d="M540 720 L900 240 L1260 720" stroke="#17181C" stroke-opacity="0.03" stroke-width="1.5"/>
+    <circle cx="1230" cy="96" r="120" stroke="#F0263C" stroke-opacity="0.045" stroke-width="22"/>
+  </svg>
+  <div class="glow"></div>
+  <img class="logo" src="../../yingdao_logo.png">
+  <div class="titleblock">
+    <div class="bar"></div>
+    <h1>案例 2：多表匹配，替代手工 VLOOKUP</h1>
+    <div class="subtitle">大批量、多字段、要反复跑的匹配，交给 Pandas 更稳</div>
+  </div>
+  <div class="left">
+    <div class="pcard">
+      <div class="head">
+        <div class="icon red"><svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 1.5 15 14H1L8 1.5z" fill="none" stroke="#F0263C" stroke-width="1.6" stroke-linejoin="round"/><path d="M8 6v3.4M8 11.6v.2" stroke="#F0263C" stroke-width="1.6" stroke-linecap="round"/></svg></div>
+        <b>业务问题</b>
+      </div>
+      <p>采购计划要人工 VLOOKUP 供应商主数据：字段多、耗时长，<b>漏配很难被发现</b>。</p>
+    </div>
+    <div class="pcard">
+      <div class="head">
+        <div class="icon ink"><svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.6" fill="none" stroke="#17181C" stroke-width="1.5"/><path d="M8 1.6v2M8 12.4v2M1.6 8h2M12.4 8h2M3.5 3.5l1.4 1.4M11.1 11.1l1.4 1.4M12.5 3.5l-1.4 1.4M4.9 11.1l-1.4 1.4" stroke="#17181C" stroke-width="1.5" stroke-linecap="round"/></svg></div>
+        <b>处理规则</b>
+      </div>
+      <p>按「供应商ID」左连接补齐名称、账期、类别；<b>名称为空即判定未匹配</b>。</p>
+    </div>
+    <div class="pcard">
+      <div class="head">
+        <div class="icon red"><svg width="16" height="16" viewBox="0 0 16 16"><path d="M2.5 8.5 6 12l7.5-8" fill="none" stroke="#F0263C" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <b>输出结果</b>
+      </div>
+      <p>完整明细一张、未匹配清单一张，<b>影刀接着做通知与归档</b>。</p>
+    </div>
+  </div>
+  <div class="right">
+    <div class="codepanel">
+      <div class="codehead">
+        <span class="dot" style="background:#F4B4BC"></span><span class="dot" style="background:#F8CDD3"></span><span class="dot" style="background:#FBE3E7"></span>
+        <span class="fn">match_orders.py</span>
+      </div>
+<pre><span class="k">import</span> pandas <span class="k">as</span> pd
+
+orders = pd.<span class="f">read_excel</span>(<span class="s">"本周采购计划.xlsx"</span>)
+master = pd.<span class="f">read_excel</span>(<span class="s">"供应商主数据.xlsx"</span>)
+
+result = orders.<span class="f">merge</span>(master, on=<span class="s">"供应商ID"</span>, how=<span class="s">"left"</span>)
+unmatched = result[result[<span class="s">"供应商名称"</span>].<span class="f">isna</span>()]
+
+result.<span class="f">to_excel</span>(<span class="s">"完整采购计划表.xlsx"</span>, index=<span class="k">False</span>)
+unmatched.<span class="f">to_excel</span>(<span class="s">"未匹配清单.xlsx"</span>, index=<span class="k">False</span>)</pre>
+    </div>
+    <div class="result">
+      <div class="cap"><span>▸</span>运行后拿到的表（示意）</div>
+      <table>
+        <tr><th>采购单号</th><th>物料编码</th><th>供应商名称</th><th>账期</th><th>匹配状态</th></tr>
+        <tr><td>PO-260721-018</td><td>MAT-88021</td><td>华骏电子</td><td>月结 60 天</td><td><span class="tag ok">已补齐</span></td></tr>
+        <tr><td>PO-260721-019</td><td>MAT-90112</td><td>联新精密</td><td>月结 30 天</td><td><span class="tag ok">已补齐</span></td></tr>
+        <tr><td>PO-260721-020</td><td>MAT-71503</td><td>—</td><td>—</td><td><span class="tag">未匹配 · 待复核</span></td></tr>
+      </table>
+    </div>
+  </div>
+  <div class="flow">
+    <span class="step">影刀下载报表</span><span class="arr">›</span>
+    <span class="step">Python 匹配补齐</span><span class="arr">›</span>
+    <span class="step">输出明细与清单</span><span class="arr">›</span>
+    <span class="step now">影刀通知归档</span>
+  </div>
+  <div class="slogan">From human doing to human being.</div>
+  <div class="pageno">11</div>
+</div></body></html>

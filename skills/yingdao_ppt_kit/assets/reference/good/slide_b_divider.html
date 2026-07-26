@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+  :root{
+    --red:#F0263C; --red-deep:#C9202F; --pink1:#FFF3F5; --pink2:#FFE4E9;
+    --ink:#17181C; --body:#3A3D43; --muted:#8A8F98; --line:#F2D8DC;
+  }
+  html,body{margin:0;padding:0}
+  .slide{position:relative;width:1280px;height:720px;overflow:hidden;background:#fff;
+    font-family:"PingFang SC","Hiragino Sans GB",-apple-system,"Helvetica Neue",sans-serif;}
+  .glow{position:absolute;inset:0;background:
+    radial-gradient(620px 420px at 94% 8%, rgba(240,38,60,.06), transparent 70%),
+    radial-gradient(500px 360px at -4% 104%, rgba(240,38,60,.045), transparent 70%);}
+  svg.texture{position:absolute;inset:0;opacity:.5}
+  .logo{position:absolute;top:38px;right:48px;height:26px}
+  .part{position:absolute;left:96px;top:118px;display:flex;align-items:center;gap:12px}
+  .part .chip{background:var(--red);color:#fff;font-size:14px;font-weight:600;padding:6px 14px;border-radius:6px;letter-spacing:2px}
+  .part .no{font-size:15px;color:var(--muted);letter-spacing:3px;font-weight:500}
+  h1{position:absolute;left:96px;top:168px;margin:0;font-size:44px;color:var(--ink);font-weight:600}
+  .sub{position:absolute;left:96px;top:238px;font-size:16px;color:#5B6069}
+  .modules{position:absolute;left:96px;top:306px;width:470px}
+  .m{display:flex;align-items:baseline;gap:16px;padding:13px 0;border-bottom:1px solid #F3F4F6}
+  .m:last-child{border-bottom:none}
+  .m .idx{font-size:15px;font-weight:600;color:#C6CAD1;width:26px}
+  .m .name{font-size:16.5px;font-weight:600;color:#9AA0A8;width:112px}
+  .m .hint{font-size:13.5px;color:#B4B9C0}
+  .m.now .idx{color:var(--red)} .m.now .name{color:var(--ink)} .m.now .hint{color:#5B6069}
+  .m.now .name::after{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--red);margin-left:8px;vertical-align:2px}
+  .visual{position:absolute;right:72px;top:132px;width:566px;height:394px;border-radius:18px;overflow:hidden;
+    box-shadow:0 18px 44px rgba(23,24,28,.12)}
+  .visual img{width:100%;height:100%;object-fit:cover}
+  .frame{position:absolute;right:72px;top:132px;width:566px;height:394px;border-radius:18px;
+    box-shadow:inset 0 0 0 1px rgba(23,24,28,.06)}
+  .flow{position:absolute;left:96px;bottom:74px;display:flex;align-items:center;gap:10px}
+  .flow .step{font-size:14.5px;font-weight:600;color:var(--red-deep);background:var(--pink1);
+    border:1px solid var(--line);padding:10px 22px;border-radius:999px}
+  .flow .step.now{background:var(--red);border-color:var(--red);color:#fff}
+  .flow .arr{color:#E3A9B2;font-size:15px}
+  .slogan{position:absolute;left:96px;bottom:30px;font-size:11.5px;color:#B7BCC4;letter-spacing:.6px}
+  .pageno{position:absolute;right:52px;bottom:28px;font-size:12.5px;color:var(--red);font-weight:600}
+</style></head>
+<body><div class="slide">
+  <svg class="texture" viewBox="0 0 1280 720" fill="none">
+    <path d="M420 720 L780 190 L1140 720" stroke="#17181C" stroke-opacity="0.035" stroke-width="1.5"/>
+    <path d="M300 720 L780 8 L1260 720" stroke="#17181C" stroke-opacity="0.025" stroke-width="1.5"/>
+    <circle cx="1218" cy="128" r="150" stroke="#F0263C" stroke-opacity="0.05" stroke-width="26"/>
+  </svg>
+  <div class="glow"></div>
+  <img class="logo" src="../../yingdao_logo.png">
+  <div class="part"><span class="chip">第三部分</span><span class="no">PART 03 / 05</span></div>
+  <h1>五类高频业务案例</h1>
+  <div class="sub">每个案例回答三件事：业务问题是什么、处理规则怎么定、输出结果给到谁</div>
+  <div class="modules">
+    <div class="m"><span class="idx">01</span><span class="name">能力定位</span><span class="hint">影刀与 Python 的分工边界</span></div>
+    <div class="m"><span class="idx">02</span><span class="name">数据映射</span><span class="hint">Excel 行列字段 ↔ DataFrame</span></div>
+    <div class="m now"><span class="idx">03</span><span class="name">业务案例</span><span class="hint">清洗 / 匹配 / 筛选 / 汇总 / 转换</span></div>
+    <div class="m"><span class="idx">04</span><span class="name">流程闭环</span><span class="hint">处理结果接回影刀继续执行</span></div>
+    <div class="m"><span class="idx">05</span><span class="name">场景判断</span><span class="hint">选对工具，链路才稳</span></div>
+  </div>
+  <div class="visual"><img src="../../brand/workflow_loop_scene.png"></div><div class="frame"></div>
+  <div class="flow">
+    <span class="step">业务问题</span><span class="arr">›</span>
+    <span class="step">处理规则</span><span class="arr">›</span>
+    <span class="step now">输出结果</span><span class="arr">›</span>
+    <span class="step">接回影刀</span>
+  </div>
+  <div class="slogan">From human doing to human being.</div>
+  <div class="pageno">09</div>
+</div></body></html>

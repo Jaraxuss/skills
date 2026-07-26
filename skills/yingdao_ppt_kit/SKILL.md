@@ -1,6 +1,6 @@
 ---
 name: yingdao-ppt-kit
-description: Create high-quality Yingdao-style customer-facing PowerPoint decks from Markdown creative briefs, using structured slide plans, AI-led visual judgment, Yingdao visual assets, optional sample-slide gates, rendering, and QA instead of fixed script templates. Use when Codex needs to make customer training, sales, delivery, project recap, or scenario co-creation PPTs for Yingdao/RPA topics, especially when the user provides Markdown source material, asks for a brief.md workflow, wants AI-led aesthetics, references Yingdao-style PPTs, or wants to avoid repetitive JSON/python-pptx output. / 基于 Markdown 创意简报生成高质量影刀风格对客 PPT，通过结构化 slide plan、AI 逐页规划版式、影刀视觉资产、可选样张 gate、渲染和 QA，而不是套固定脚本模板。适用于影刀/RPA 相关的客户培训、售前汇报、交付复盘、项目总结和场景共创材料，尤其是用户提供 Markdown 资料、要求 brief.md 工作流、希望 AI 做审美判断、参考影刀风格样张，或明确不想要重复的 JSON/python-pptx 脚本产物时。
+description: Create high-quality Yingdao-style customer-facing PowerPoint decks from Markdown creative briefs, using structured slide plans, AI-led visual judgment, Yingdao visual assets, optional sample-slide gates, rendering, and QA instead of fixed script templates. Use when the agent needs to make customer training, sales, delivery, project recap, or scenario co-creation PPTs for Yingdao/RPA topics, especially when the user provides Markdown source material, asks for a brief.md workflow, wants AI-led aesthetics, references Yingdao-style PPTs, or wants to avoid repetitive JSON/python-pptx output. / 基于 Markdown 创意简报生成高质量影刀风格对客 PPT，通过结构化 slide plan、AI 逐页规划版式、影刀视觉资产、可选样张 gate、渲染和 QA，而不是套固定脚本模板。适用于影刀/RPA 相关的客户培训、售前汇报、交付复盘、项目总结和场景共创材料，尤其是用户提供 Markdown 资料、要求 brief.md 工作流、希望 AI 做审美判断、参考影刀风格样张，或明确不想要重复的 JSON/python-pptx 脚本产物时。
 ---
 
 # Yingdao PPT Kit
@@ -26,11 +26,12 @@ Typical triggers:
 
 1. 先读取 `brief.md`。如果用户提供了其他 Markdown 文件，把它当作 brief 使用；如果没有 brief，先从用户需求整理出一份临时 brief。
 2. 按任务需要读取 reference files，不要一次性加载无关资料：
+   - `references/design-tokens.md` REQUIRED before authoring any slide: numeric spec for palette, type scale, furniture, components, page compositions, and QA hard gates. 样张见 `assets/reference/good/`（PNG 看效果，HTML 抄结构数值）。
    - `references/visual-style.md` for Yingdao visual language.
    - `references/slide-patterns.md` for page types, rhythm, and anti-patterns.
    - `references/customer-copy.md` for customer-facing wording rules.
    - `references/qa-checklist.md` before final delivery.
-3. 使用系统 `presentations` skill 创建 PowerPoint，并遵守其当前要求，包括 `artifact-tool`、rendered slide inspection 和 QA。
+3. 使用系统 `pptx` skill（PowerPoint 系统技能，pptxgenjs 生成路线；旧版文档称 `presentations`）创建 PowerPoint，并遵守其要求，包括 rendered slide inspection 和 QA。本 skill 的 design tokens 与系统 skill 的通用设计建议冲突时，以 design tokens 为准（影刀品牌语言允许红竖条标题、卡片左色条等元素）。
 4. 先输出内部 structured slide plan，再开始制作。每页都要明确：
    - `role`：cover、chapter、case、process、comparison、table、code、summary 等。
    - `intent`：这页帮助客户理解、判断或行动什么。
@@ -41,10 +42,11 @@ Typical triggers:
    - `speaker notes`：只放讲解辅助，不把内部提示写到画面上。
    - `local_context`：把本页需要的字段、规则、案例背景写清楚，避免引用“上页/上面那个框架”这类隐式上下文。
 5. 用 AI-led design judgment 制作 deck：
-   - 每 3-5 页改变一次视觉节奏。
-   - 主动使用 visual assets、screenshots、generated images、diagrams 或 infographic。
-   - 代码页只展示关键片段，保证字号和业务解释层级。
-   - 业务案例页要先讲业务问题，再讲处理规则和输出结果。
+   - 所有数值（字号、边距、圆角、投影、色值、家具位置）按 `references/design-tokens.md` 执行；judgment 用在构图选择、密度分配和资产选择上。
+   - 每 3-5 页改变一次视觉节奏；超过 10 页的 deck 每 4-5 个内容页插一张章节页（构图见样张 `slide_b_divider`）。
+   - 主动使用 `assets/brand/` 场景图、screenshots、generated images、diagrams 或 infographic；封面必须有 hero 视觉。
+   - 代码页只展示关键片段（≤12 行），保证字号和业务解释层级。
+   - 业务案例页要先讲业务问题，再讲处理规则和输出结果，并带"运行结果示意"证据区（见样张 `slide_c_case`）。
 6. 按需使用 lightweight sample gate：默认可直接生成 `.pptx`；当材料是高价值客户交付、风格方向不明确，或用户明确要求精修时，先生成并渲染 1 页代表性样张确认视觉身份，再扩展到全 deck。
 7. 生成后必须 render all slides，查看 contact sheet 和 full-size previews；发现重叠、越界、中文乱码、文字过小、图片缺失、strict input asset 未正确使用或页面重复感时，先返修再交付。
 
@@ -68,7 +70,8 @@ Use `brief.md` as a template. For a filled regression sample, see `examples/brie
 ## Rules
 
 - MUST 优先使用 Markdown creative brief + AI-led slide planning 路线。
-- MUST 使用系统 `presentations` skill 生成、渲染并检查最终 `.pptx`。
+- MUST 使用系统 `pptx` skill 生成、渲染并检查最终 `.pptx`。
+- MUST 遵守 `references/design-tokens.md` 的数值规范与 QA 硬门槛：无文字截断、可见文字 ≥9pt、内容页底部 1/3 不整体留白、圆角 ≤14px、无默认灰投影、装饰不压内容、家具位置逐页一致。
 - MUST 默认生成可编辑 PowerPoint 页面，保留文本、表格、代码、流程图等对象的可维护性。
 - MUST 保持影刀主视觉身份：白底、影刀红、柔粉氛围、深灰/黑文字；外部风格只借鉴结构，不迁移主色。
 - MUST 让同一 deck 拥有一致 visual identity，但按页面语义改变 composition。
@@ -87,8 +90,9 @@ Use `brief.md` as a template. For a filled regression sample, see `examples/brie
 ## Assets / 资产
 
 - `assets/yingdao_logo.png` 是默认 logo。
-- 把 reference decks、exported slide images、screenshots、reusable illustrations 放在 `assets/`。
-- `assets/reference/` 可以存放 good / bad examples。Bad examples 只作为 anti-patterns，不作为设计模板。
+- `assets/brand/` 是品牌场景图库（红白粉色系，来自认可的参考 deck）：`cover_hero_office`（封面/收尾 hero）、`workflow_loop_scene`、`data_cleaning_before_after`、`table_matching_scene`、`data_pipeline_scene`。优先复用；同一张图一个 deck 最多用两次。
+- `assets/reference/good/` 是四张定稿样张（封面/章节/案例/总结，PNG+HTML）。制作前先看，风格对齐它们。
+- `assets/reference/bad/` 是固定脚本产物的反例截图（文字截断、药丸圆角、空白失衡）。只作为 anti-patterns，不作为设计模板。
 
 ## Legacy Tools
 
@@ -113,7 +117,7 @@ Expected approach:
 1. Treat the Markdown outline as the brief.
 2. Read relevant reference files, especially `visual-style.md`, `slide-patterns.md`, and `customer-copy.md`.
 3. Create a slide plan before authoring.
-4. Build with `presentations` and `artifact-tool`, using visual assets or generated images where useful.
+4. Build with the system `pptx` skill, following `references/design-tokens.md`, using `assets/brand/` visuals or generated images where useful.
 5. Render, inspect, revise, then deliver `.pptx`.
 
 ### 中文示例

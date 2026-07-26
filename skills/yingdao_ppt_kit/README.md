@@ -5,12 +5,13 @@ This skill now uses a Markdown creative brief as the primary input for high-qual
 ## Recommended Workflow
 
 1. Copy `brief.md` and fill in the customer, audience, content scope, visual direction, page intent, and acceptance criteria.
-2. Ask Codex to use this skill and the filled brief to create a `.pptx`.
-3. Codex should use the `presentations` workflow to plan, design, build, render, inspect, and revise the deck.
+2. Ask the agent to use this skill and the filled brief to create a `.pptx`.
+3. The agent should use the system `pptx` skill plus `references/design-tokens.md` to plan, design, build, render, inspect, and revise the deck.
 4. Final decks should use AI-led layout and visual judgment, not fixed Python layouts.
 
 ## Reference Files
 
+- `references/design-tokens.md`: numeric design spec (palette, type scale, furniture, components, QA hard gates). Read before authoring.
 - `references/visual-style.md`: Yingdao visual language.
 - `references/slide-patterns.md`: page patterns, rhythm rules, and anti-patterns.
 - `references/customer-copy.md`: customer-facing copy rules.
@@ -20,7 +21,9 @@ This skill now uses a Markdown creative brief as the primary input for high-qual
 ## Assets
 
 - `assets/yingdao_logo.png`: default logo.
-- `assets/reference/bad_fixed_script_output.png`: anti-pattern example showing why the old fixed script route should not be used for final customer decks.
+- `assets/brand/`: reusable on-palette scene images (cover hero, workflow loop, data cleaning, table matching, data pipeline).
+- `assets/reference/good/`: four approved sample slides (cover / divider / case / summary), PNG + HTML source.
+- `assets/reference/bad/`: real anti-pattern renders from the legacy fixed-script route.
 
 ## Legacy Tools
 

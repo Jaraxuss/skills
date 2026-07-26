@@ -66,13 +66,11 @@ The sample should be a representative content slide, not always the cover. Rende
 
 ## Bad Output Anti-Patterns
 
-The screenshot in `assets/reference/bad_fixed_script_output.png` is an anti-pattern example:
+`assets/reference/bad/` 里是固定脚本产物的真实反例：
 
-- repeated card/code page structure
-- code too small and not visually important
-- missing business imagery
-- weak hierarchy between business problem, result, and code
-- mostly static white slides with repeated pale ring decoration
-- low sense of customer-facing polish
+- `builder_cards_truncated-04.png`：卡片文字被截断、药丸式巨圆角、卡片下半截空白、默认灰投影。
+- `builder_codecase_unbalanced-08.png`：代码面板下半截全空、左轻右重、裸文字流程收尾、粉色圆环带阴影压在内容后面。
 
-Do not imitate that screenshot. Use it to identify what to avoid.
+共性问题：repeated card/code page structure、missing business imagery、weak hierarchy、repeated pale ring decoration、low customer-facing polish。
+
+Do not imitate these screenshots. Use them to identify what to avoid; the positive baseline is `assets/reference/good/`.

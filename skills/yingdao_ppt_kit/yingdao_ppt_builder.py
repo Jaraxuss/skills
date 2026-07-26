@@ -95,39 +95,43 @@ class YingdaoDeck:
             self.notes_to_inject[self.page_no] = notes_text
 
     # ---------- base layout ----------
-    def add_slide_base(self, show_logo: bool = True, show_footer: bool = True):
+    def add_slide_base(self, show_logo: bool = True, show_footer: bool = True, decor: bool = True):
         slide = self.prs.slides.add_slide(self.blank)
         self.page_no += 1
-        self._add_background(slide)
+        self._add_background(slide, decor=decor)
         if show_logo:
             self._add_logo(slide)
         if show_footer:
             self._add_footer(slide, self.page_no)
         return slide
 
-    def _add_background(self, slide) -> None:
+    def _add_background(self, slide, decor: bool = True) -> None:
         # white canvas
         bg = slide.background.fill
         bg.solid()
         bg.fore_color.rgb = COLORS["white"]
 
-        # soft brand ambience: pale pink ring/blocks on right and corner waves
-        ring = slide.shapes.add_shape(
-            MSO_AUTO_SHAPE_TYPE.OVAL,
-            Inches(9.35), Inches(1.1), Inches(3.65), Inches(3.65),
-        )
-        ring.fill.solid()
-        ring.fill.fore_color.rgb = RGBColor(0xFF, 0xEA, 0xED)
-        ring.fill.transparency = 35
-        ring.line.fill.background()
+        # soft brand ambience on low-density pages only (cover/statement/qa);
+        # dense pages skip it so decoration never sits behind content
+        if decor:
+            ring = slide.shapes.add_shape(
+                MSO_AUTO_SHAPE_TYPE.OVAL,
+                Inches(9.35), Inches(1.1), Inches(3.65), Inches(3.65),
+            )
+            ring.fill.solid()
+            ring.fill.fore_color.rgb = RGBColor(0xFF, 0xEA, 0xED)
+            ring.fill.transparency = 35
+            ring.line.fill.background()
+            ring.shadow.inherit = False
 
-        cut = slide.shapes.add_shape(
-            MSO_AUTO_SHAPE_TYPE.OVAL,
-            Inches(9.85), Inches(1.58), Inches(2.75), Inches(2.75),
-        )
-        cut.fill.solid()
-        cut.fill.fore_color.rgb = COLORS["white"]
-        cut.line.fill.background()
+            cut = slide.shapes.add_shape(
+                MSO_AUTO_SHAPE_TYPE.OVAL,
+                Inches(9.85), Inches(1.58), Inches(2.75), Inches(2.75),
+            )
+            cut.fill.solid()
+            cut.fill.fore_color.rgb = COLORS["white"]
+            cut.line.fill.background()
+            cut.shadow.inherit = False
 
         # bottom line
         line = slide.shapes.add_shape(
@@ -137,6 +141,7 @@ class YingdaoDeck:
         line.fill.solid()
         line.fill.fore_color.rgb = COLORS["line"]
         line.line.fill.background()
+        line.shadow.inherit = False
 
     def _add_logo(self, slide) -> None:
         if self.logo_path and self.logo_path.exists():
@@ -155,6 +160,7 @@ class YingdaoDeck:
         mark.fill.solid()
         mark.fill.fore_color.rgb = COLORS["red"]
         mark.line.fill.background()
+        mark.shadow.inherit = False
         self.text(slide, title, 0.76, 0.55, 8.9, 0.48, size=24, bold=True, color=COLORS["black"])
         if subtitle:
             self.text(slide, subtitle, 0.76, 1.09, 8.9, 0.28, size=15, color=COLORS["red"], bold=True)
@@ -166,6 +172,7 @@ class YingdaoDeck:
         box = slide.shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
         tf = box.text_frame
         tf.clear()
+        tf.word_wrap = True
         tf.margin_left = Inches(0.02)
         tf.margin_right = Inches(0.02)
         tf.margin_top = Inches(0.01)
@@ -184,10 +191,17 @@ class YingdaoDeck:
 
     def card(self, slide, x: float, y: float, w: float, h: float, *, fill=None, line=None, shadow=False):
         shp = slide.shapes.add_shape(MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE, Inches(x), Inches(y), Inches(w), Inches(h))
+        try:
+            # default adjustment scales with shape size and produces pill-like corners;
+            # keep radius near the 12px spec from references/design-tokens.md
+            shp.adjustments[0] = 0.045
+        except Exception:
+            pass
         shp.fill.solid()
         shp.fill.fore_color.rgb = fill or COLORS["pink"]
         shp.line.color.rgb = line or RGBColor(0xF1, 0xC9, 0xD0)
         shp.line.width = Pt(0.75)
+        shp.shadow.inherit = False
         if shadow:
             # python-pptx has limited shadow support; use light border instead for compatibility.
             pass
@@ -201,6 +215,7 @@ class YingdaoDeck:
             bar.fill.solid()
             bar.fill.fore_color.rgb = COLORS["red"]
             bar.line.fill.background()
+            bar.shadow.inherit = False
         self.text(slide, title, x + 0.24, y + 0.18, w - 0.38, 0.32, size=16, bold=True, color=COLORS["black"])
         self.text(slide, body, x + 0.24, y + 0.62, w - 0.38, h - 0.78, size=body_size, color=COLORS["body"], valign=MSO_ANCHOR.TOP)
 
@@ -209,6 +224,7 @@ class YingdaoDeck:
         shp.fill.solid()
         shp.fill.fore_color.rgb = COLORS["red"]
         shp.line.fill.background()
+        shp.shadow.inherit = False
         return shp
 
     # ---------- content layouts ----------
@@ -236,7 +252,7 @@ class YingdaoDeck:
         self.set_speaker_notes(slide, cfg.get("speaker_notes"))
 
     def add_table_slide(self, cfg: dict) -> None:
-        slide = self.add_slide_base()
+        slide = self.add_slide_base(decor=False)
         self.title_bar(slide, cfg["title"], cfg.get("subtitle"))
         rows = cfg["rows"]
         headers = cfg.get("headers")
@@ -283,7 +299,7 @@ class YingdaoDeck:
         run.font.color.rgb = color
 
     def add_cards_slide(self, cfg: dict) -> None:
-        slide = self.add_slide_base()
+        slide = self.add_slide_base(decor=False)
         self.title_bar(slide, cfg["title"], cfg.get("subtitle"))
         cards = cfg["cards"]
         n = len(cards)
@@ -303,7 +319,7 @@ class YingdaoDeck:
         self.set_speaker_notes(slide, cfg.get("speaker_notes"))
 
     def add_process_slide(self, cfg: dict) -> None:
-        slide = self.add_slide_base()
+        slide = self.add_slide_base(decor=False)
         self.title_bar(slide, cfg["title"], cfg.get("subtitle"))
         steps = cfg["steps"]
         x0, y, w, h, gap = 0.85, 2.0, 1.65, 1.12, 0.37
@@ -320,7 +336,7 @@ class YingdaoDeck:
         self.set_speaker_notes(slide, cfg.get("speaker_notes"))
 
     def add_code_case_slide(self, cfg: dict) -> None:
-        slide = self.add_slide_base()
+        slide = self.add_slide_base(decor=False)
         self.title_bar(slide, cfg["title"], cfg.get("subtitle"))
         # left business cards
         for i, card in enumerate(cfg.get("cards", [])):
@@ -341,10 +357,15 @@ class YingdaoDeck:
     def add_code_block(self, slide, code: str, x: float, y: float, w: float, h: float, font_size: int = 12):
         bg = slide.shapes.add_shape(MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE, Inches(x), Inches(y), Inches(w), Inches(h))
         bg.name = "CODE_BACKGROUND"
+        try:
+            bg.adjustments[0] = 0.045
+        except Exception:
+            pass
         bg.fill.solid()
         bg.fill.fore_color.rgb = COLORS["code_bg"]
         bg.line.color.rgb = COLORS["code_border"]
         bg.line.width = Pt(0.8)
+        bg.shadow.inherit = False
         box = slide.shapes.add_textbox(Inches(x + 0.16), Inches(y + 0.16), Inches(w - 0.32), Inches(h - 0.32))
         box.name = "CODE_TEXT"
         tf = box.text_frame
