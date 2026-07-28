@@ -1,6 +1,6 @@
 ---
 name: yingdao-boss-data-hub
-description: Fetch customer/client data from Yingdao's Boss platform through the Boss login, asCode exchange, and AppStudio token chain, then download all paginated datasource records for a specified business group. Use when a user asks to pull, export, refresh, or inspect Yingdao Boss customer tables, configure this workflow for first use, or produce the shared latest dataset that a downstream analysis skill will consume.
+description: Fetch, export, refresh, and inspect Yingdao Boss customer data; build daily tenant reports, XLSX-based app-run insights, and the CSM action dashboard. Use when a user asks to work with Yingdao Boss customer tables or dashboards, prepare shared latest datasets, or generate a CSM dashboard. Dashboard generation requires explicit user confirmation of local JSON versus API-refresh sources before any build or refresh.
 ---
 
 # Yingdao Boss Data Hub
@@ -33,7 +33,15 @@ runtime/yingdao-boss-data-hub/config.local.json
 Run from the skill root directory:
 
 ```bash
-pip install -r skills/yingdao-boss-data-hub/scripts/requirements.txt
+python3 -m pip install -r skills/yingdao-boss-data-hub/scripts/requirements.txt
+```
+
+## Python execution environment
+
+Run Python commands with the user's `llm` conda environment:
+
+```bash
+python3 <script> [arguments]
 ```
 
 ## Default workflow
@@ -197,7 +205,7 @@ This feature is based on detailed BOSS XLSX exports, not on the normal daily rep
 Generate app run insight aggregates from a downloaded tenant dashboard XLSX:
 
 ```bash
-python skills/yingdao-boss-data-hub/scripts/build_app_run_insights.py \
+python3 skills/yingdao-boss-data-hub/scripts/build_app_run_insights.py \
   runtime/yingdao-boss/客户数据看板.xlsx \
   --output runtime/yingdao-boss/latest-app-run-insights.json \
   --client-name "客户名称" \
@@ -205,7 +213,7 @@ python skills/yingdao-boss-data-hub/scripts/build_app_run_insights.py \
   --custom-no "客户编号"
 ```
 
-The dashboard builder treats `latest-app-run-insights.json` as optional. If it is missing, the dashboard still builds and the `运行洞察` tab shows an empty state for clients without detailed run data.
+The low-level dashboard builder treats `latest-app-run-insights.json` as optional. If it is missing, the dashboard still builds and the `运行洞察` tab shows an empty state for clients without detailed run data. Do not describe that result as a **complete dashboard**. A complete dashboard requires run-insight coverage for every included target client.
 
 Run insight user and maintenance docs:
 
@@ -216,7 +224,33 @@ Run insight user and maintenance docs:
 
 Use the static dashboard workflow when the user wants to inspect client-success risk, renewal follow-up priority, per-client daily metric trends, or the generated customer-success workbench.
 
-Recommended one-command workflow:
+#### Mandatory dashboard source decision gate
+
+Apply this gate on **every dashboard-generation request**, even when local JSON files exist and appear fresh. Do not build or refresh the dashboard until the user explicitly chooses the source for non-XLSX data.
+
+1. Determine the target customer set from the user-provided detailed XLSX exports. Ignore temporary Excel lock files beginning with `~$`.
+2. Inspect existing local inputs read-only and report their paths, data/fetch dates, row counts, distinct customer counts, and coverage of the target customer set:
+   - `runtime/yingdao-boss/latest-clients.json`
+   - `runtime/yingdao-boss/latest-reports.json`
+   - `runtime/yingdao-boss/contracts-expiration-summary.json`
+   - `runtime/yingdao-boss/latest-app-run-insights.json`
+3. Ask the user to choose exactly one source for customer, contract, and daily-report data:
+   - **Use existing local JSON**: state the inspected dates and customer coverage before asking.
+   - **Refresh through the APIs**: state that the workflow will update `latest-clients.json`, `latest-contracts.json`, `contracts-expiration-summary.json`, and `latest-reports.json`. API refresh does not replace the XLSX-to-run-insights step.
+4. Treat the user's source selection as required confirmation. File presence, freshness, a dashboard request, or provision of XLSX files is not consent to choose a source or call the APIs.
+5. Compare the target customer set against client profiles, daily reports, and app-run insights. List every missing customer grouped by missing data type.
+6. If coverage is incomplete, stop and ask the user to confirm the exact customers to exclude. Continue only when every remaining target customer has client-profile, daily-report, and run-insight coverage. Never silently exclude customers or retain empty run-insight states while calling the result complete.
+
+#### Dashboard data-source responsibilities and prohibitions
+
+- Use only `latest-reports.json` with schema `yingdao-boss-data-hub-tenant-reports.v1`, or a file produced by `fetch_tenant_reports.py`, for daily metric trends.
+- Use detailed XLSX `运行明细数据` only to build `latest-app-run-insights.json`.
+- Never derive, simulate, spread, or substitute daily trend rows from XLSX `企业月数据`, `企业汇总数据`, or other monthly/summary sheets.
+- Never generate an Excel-only CSM dashboard. There is no degraded-mode exception.
+- Do not call `build_data.py` until the source choice and any customer exclusions have been explicitly confirmed.
+- `build_data.py` rejects non-daily report schemas; do not bypass or weaken this validation.
+
+After the source decision gate is satisfied, the recommended API-refresh workflow is:
 
 ```bash
 python3 skills/yingdao-boss-data-hub/dashboard/refresh_dashboard.py
@@ -239,7 +273,7 @@ The dashboard builder reads:
 - `runtime/yingdao-boss/latest-reports.json` (required): daily tenant report rows and metric trends
 - `runtime/yingdao-boss/latest-clients.json` (optional): CS owner, service stage, cooperation status, deployment type, renewal metadata
 - `runtime/yingdao-boss/contracts-expiration-summary.json` (optional): near-expiration contract buckets and contract details
-- `runtime/yingdao-boss/latest-app-run-insights.json` (optional): detailed app-run aggregates for `运行洞察`
+- `runtime/yingdao-boss/latest-app-run-insights.json` (optional for the low-level builder, required for a complete dashboard): detailed app-run aggregates for `运行洞察`
 
 It writes the self-contained static dashboard:
 

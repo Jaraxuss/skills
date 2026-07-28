@@ -14,6 +14,7 @@ DEFAULT_APP_RUN_INSIGHTS_INPUT = os.path.join(RUNTIME_DIR, "latest-app-run-insig
 DEFAULT_TEMPLATE = os.path.join(SCRIPT_DIR, "_template.html")
 DEFAULT_OUTPUT = os.path.join(SCRIPT_DIR, "dashboard.html")
 PLACEHOLDER = '"__REPORT_DATA_PLACEHOLDER__"'
+EXPECTED_REPORT_SCHEMA = "yingdao-boss-data-hub-tenant-reports.v1"
 
 
 def read_json(path, required=False, label="data"):
@@ -27,6 +28,51 @@ def read_json(path, required=False, label="data"):
     print(f"📖 Reading {label} from: {path}")
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def validate_tenant_reports(data, path):
+    if not isinstance(data, dict):
+        print(f"❌ Error: tenant reports must be a JSON object: {path}")
+        sys.exit(1)
+
+    schema = data.get("schema")
+    if schema != EXPECTED_REPORT_SCHEMA:
+        actual = schema or "<missing>"
+        print(
+            "❌ Error: dashboard metric trends require the daily tenant-report schema "
+            f"'{EXPECTED_REPORT_SCHEMA}', but {path} uses '{actual}'."
+        )
+        print("   Do not derive or substitute daily trends from exported Excel monthly/summary sheets.")
+        print(
+            "   Ask the user to choose either the existing runtime/yingdao-boss/latest-reports.json "
+            "or an API refresh via scripts/fetch_tenant_reports.py."
+        )
+        sys.exit(1)
+
+    rows = data.get("rows")
+    if not isinstance(rows, list):
+        print(f"❌ Error: daily tenant reports must contain a 'rows' array: {path}")
+        sys.exit(1)
+    if not rows:
+        print(f"❌ Error: daily tenant reports contain no rows: {path}")
+        sys.exit(1)
+
+    invalid_row = next(
+        (
+            index
+            for index, row in enumerate(rows, start=1)
+            if not isinstance(row, dict)
+            or not row.get("statisticDate")
+            or not (row.get("_organizationName") or row.get("_organizationUuid") or row.get("_customNo"))
+        ),
+        None,
+    )
+    if invalid_row is not None:
+        print(
+            "❌ Error: daily tenant report row "
+            f"{invalid_row} must contain statisticDate and a customer identifier/name: {path}"
+        )
+        sys.exit(1)
 
 
 def first(value):
@@ -131,6 +177,7 @@ def main():
     output_path = os.path.abspath(args.output)
 
     reports = read_json(input_path, required=True, label="tenant reports")
+    validate_tenant_reports(reports, input_path)
     clients_data = read_json(clients_input_path, required=False, label="client profiles")
     expiration_data = read_json(expiration_input_path, required=False, label="expiration summary")
     app_run_insights_data = read_json(app_run_insights_input_path, required=False, label="app run insights")
