@@ -21,7 +21,9 @@ This skill now uses a Markdown creative brief as the primary input for high-qual
 ## Assets
 
 - `assets/yingdao_logo.png`: default logo.
-- `assets/brand/`: reusable on-palette scene images (cover hero, workflow loop, data cleaning, table matching, data pipeline).
+- `assets/manifest.json`: image index — tier, target slide roles, recommended scrim, industry fit, safe text zone, reuse cap. Read it before picking images.
+- `assets/atmosphere/`, `assets/hero/`, `assets/concept/`: three-tier image library (background wash / cover hero / concept illustration).
+- `scripts/duotone.js`: map any source image onto the Yingdao red/white/pink palette before adding it to the manifest.
 - `assets/reference/good/`: four approved sample slides (cover / divider / case / summary), PNG + HTML source.
 - `assets/reference/bad/`: real anti-pattern renders from the legacy fixed-script route.
 

@@ -43,8 +43,8 @@ Typical triggers:
    - `local_context`：把本页需要的字段、规则、案例背景写清楚，避免引用“上页/上面那个框架”这类隐式上下文。
 5. 用 AI-led design judgment 制作 deck：
    - 所有数值（字号、边距、圆角、投影、色值、家具位置）按 `references/design-tokens.md` 执行；judgment 用在构图选择、密度分配和资产选择上。
-   - 每 3-5 页改变一次视觉节奏；超过 10 页的 deck 每 4-5 个内容页插一张章节页（构图见样张 `slide_b_divider`）。
-   - 主动使用 `assets/brand/` 场景图、screenshots、generated images、diagrams 或 infographic；封面必须有 hero 视觉。
+   - 每 3-5 页改变一次视觉节奏；超过 10 页的 deck 每 4-5 个内容页插一张章节页。章节页有 `divider-split`（左文右图，样张 `slide_b_divider`）和 `divider-halfbleed`（右侧图三边出血 + 左侧 atmosphere 底纹）两种变体，多于两张时交替使用。
+   - 主动使用 `assets/atmosphere/` 铺底图、`assets/concept/` 示意图、screenshots、generated images、diagrams 或 infographic；封面必须有 hero 视觉。
    - 代码页只展示关键片段（≤12 行），保证字号和业务解释层级。
    - 业务案例页要先讲业务问题，再讲处理规则和输出结果，并带"运行结果示意"证据区（见样张 `slide_c_case`）。
 6. 按需使用 lightweight sample gate：默认可直接生成 `.pptx`；当材料是高价值客户交付、风格方向不明确，或用户明确要求精修时，先生成并渲染 1 页代表性样张确认视觉身份，再扩展到全 deck。
@@ -90,9 +90,21 @@ Use `brief.md` as a template. For a filled regression sample, see `examples/brie
 ## Assets / 资产
 
 - `assets/yingdao_logo.png` 是默认 logo。
-- `assets/brand/` 是品牌场景图库（红白粉色系，来自认可的参考 deck）：`cover_hero_office`（封面/收尾 hero）、`workflow_loop_scene`、`data_cleaning_before_after`、`table_matching_scene`、`data_pipeline_scene`。优先复用；同一张图一个 deck 最多用两次。
+- `assets/manifest.json` 是图库索引，**选图前先读它**：每张图记录了 tier、适用页型、推荐蒙版、行业倾向、安全文字区（文字该放哪一侧）、复用上限。文件末尾的 `gaps` 字段列出已知缺口。
+- 图库按用途分三层，不按行业铺矩阵：
+  - `assets/atmosphere/` 氛围底图（4 张，行业中性）：halfbleed 章节页的左侧底纹、声明页、收尾。均为人工筛选的生成图，构图语义见 manifest；本身很淡，只配轻蒙版。
+  - `assets/hero/` 封面主视觉、halfbleed 出血主图：行业相关，目前只有行业中性的 `hero_office_generic`。
+  - `assets/concept/` 概念示意图（4 张）：案例页配图、流程页示意、halfbleed 出血主图。**不能当文字背景**，且带制造/物流道具，跨行业前查 manifest。
 - `assets/reference/good/` 是四张定稿样张（封面/章节/案例/总结，PNG+HTML）。制作前先看，风格对齐它们。
 - `assets/reference/bad/` 是固定脚本产物的反例截图（文字截断、药丸圆角、空白失衡）。只作为 anti-patterns，不作为设计模板。
+
+### 工具脚本
+
+- `scripts/duotone.js`：把任意来源的图片映射成红白粉调，入库前跑一遍。图源因此不必自带品牌配色。
+
+```bash
+node scripts/duotone.js <输入图> <输出图> --tier atmosphere|hero|concept
+```
 
 ## Legacy Tools
 
@@ -117,7 +129,7 @@ Expected approach:
 1. Treat the Markdown outline as the brief.
 2. Read relevant reference files, especially `visual-style.md`, `slide-patterns.md`, and `customer-copy.md`.
 3. Create a slide plan before authoring.
-4. Build with the system `pptx` skill, following `references/design-tokens.md`, using `assets/brand/` visuals or generated images where useful.
+4. Build with the system `pptx` skill, following `references/design-tokens.md`, picking images from `assets/manifest.json` by tier, or generating new ones.
 5. Render, inspect, revise, then deliver `.pptx`.
 
 ### 中文示例

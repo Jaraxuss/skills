@@ -25,6 +25,20 @@ Use `deck_context` for concepts that multiple slides need: source summary, core 
 - `style reference`: use only for palette, composition mood, density, texture, or visual hierarchy; do not copy private content.
 - `generated visual`: create or source a business-relevant visual when no real screenshot exists; it must match the Yingdao red/white/pink identity.
 
+## Asset Tiers
+
+图库按用途分三层，选图先定层。数值规范和复用上限见 `references/design-tokens.md`，逐图索引见 `assets/manifest.json`。
+
+| Tier | 用途 | 行业相关性 | 能否铺底 |
+| --- | --- | --- | --- |
+| `atmosphere` | halfbleed 章节页的左侧底纹、声明页、收尾 | 无 | 是（配 `scrim-wash`，勿重压） |
+| `hero` | 封面主视觉、halfbleed 出血主图 | 强 | 是（`scrim-left`） |
+| `concept` | 案例页配图、流程页示意、halfbleed 出血主图 | 中 | **否**（不能当文字背景） |
+
+选图时问三个问题：这页需要氛围还是需要信息？（氛围 → atmosphere，信息 → concept）文字压在图上吗？（是 → 查 manifest 的 `safe_text_zone` 决定文字放哪侧）这张图这个 deck 用过几次了？（查 tier 的复用上限）
+
+`concept` 层不能当文字背景：这几张是信息量大的插画，靠小元素承载意义，压上蒙版会糊成色块。它们可以独占图区（案例页右侧、`divider-halfbleed` 的出血主图）。它们也带行业道具（仓储、叉车），跨行业复用前先查 manifest 的 `industry` 字段。
+
 ## Recommended Patterns
 
 - Cover: strong title, customer context, logo, one meaningful hero visual.
@@ -39,6 +53,7 @@ Use `deck_context` for concepts that multiple slides need: source summary, core 
 ## Rhythm Rules
 
 - Change layout family every 3-5 slides.
+- 章节页有两种变体（`divider-split` 左文 + 右侧圆角卡片图 / `divider-halfbleed` 右侧图三边出血），多于两张章节页时交替使用。
 - Avoid long runs of three-card slides.
 - Avoid stacking table slides back to back unless they serve different purposes.
 - Use section transitions for long decks.

@@ -1,0 +1,194 @@
+{
+  "$comment": "影刀 PPT 图库索引。选图流程：先按 slide role 定 tier，再在该 tier 内按 mood/industry 选具体图。safe_text_zone 告诉你标题该放哪一侧；built_in_clear_zone=true 表示图自带压字留白区，不要再叠重蒙版。",
+  "version": 1,
+  "tiers": {
+    "atmosphere": {
+      "dir": "assets/atmosphere",
+      "purpose": "半出血章节页的左侧底纹、低密度声明页；本身太淡，不单独做章节页主视觉",
+      "industry_bound": false,
+      "max_reuse_per_deck": 3,
+      "default_scrim": "scrim-wash",
+      "note": "人工筛选的 16:9 生成图；灰度高、禁止叠重蒙版。目录中未登记到 images 的文件不得使用"
+    },
+    "hero": {
+      "dir": "assets/hero",
+      "purpose": "封面主视觉；也可做 divider-halfbleed 的出血主图",
+      "industry_bound": true,
+      "max_reuse_per_deck": 2,
+      "default_scrim": "scrim-left"
+    },
+    "concept": {
+      "dir": "assets/concept",
+      "purpose": "案例页配图、流程页示意；也可做 divider-halfbleed 的出血主图",
+      "industry_bound": true,
+      "max_reuse_per_deck": 1,
+      "default_scrim": null,
+      "note": "信息量大的插画：可以独占图区（案例页右侧、halfbleed 出血主图），但不能当文字背景——压上蒙版会糊成色块"
+    }
+  },
+  "images": [
+    {
+      "file": "assets/atmosphere/atmosphere_radial_rays.png",
+      "tier": "atmosphere",
+      "mood": "克制、留白、轻科技",
+      "best_for": [
+        "divider-halfbleed-underlay",
+        "statement"
+      ],
+      "industry": "any",
+      "safe_text_zone": "left",
+      "scrims": [
+        "scrim-wash"
+      ],
+      "note": "最安全的通用底；重心在右上，左侧留白最大",
+      "built_in_clear_zone": true
+    },
+    {
+      "file": "assets/atmosphere/atmosphere_orbit_grid.png",
+      "tier": "atmosphere",
+      "mood": "结构、秩序、科技感",
+      "best_for": [
+        "divider-halfbleed-underlay",
+        "architecture",
+        "statement"
+      ],
+      "industry": "any",
+      "safe_text_zone": "left",
+      "scrims": [
+        "scrim-wash"
+      ],
+      "note": "右侧圆弧与网格适合系统架构、模块拆分、能力分工章节",
+      "built_in_clear_zone": true
+    },
+    {
+      "file": "assets/atmosphere/atmosphere_mesh_flow.png",
+      "tier": "atmosphere",
+      "mood": "流动、连接、数据感",
+      "best_for": [
+        "divider-halfbleed-underlay",
+        "process",
+        "closing"
+      ],
+      "industry": "any",
+      "safe_text_zone": "left",
+      "scrims": [
+        "scrim-wash"
+      ],
+      "note": "右侧弧线与网格适合流程、链路和数据流转章节",
+      "built_in_clear_zone": true
+    },
+    {
+      "file": "assets/atmosphere/atmosphere_ribbon_wave.png",
+      "tier": "atmosphere",
+      "mood": "柔和、舒展、收束感",
+      "best_for": [
+        "divider-halfbleed-underlay",
+        "closing"
+      ],
+      "industry": "any",
+      "safe_text_zone": "upper-left",
+      "scrims": [
+        "scrim-wash"
+      ],
+      "note": "曲线集中在下半部，适合收尾或低密度页面；正文不要压在左下波纹上",
+      "built_in_clear_zone": true
+    },
+    {
+      "file": "assets/hero/hero_office_generic.png",
+      "tier": "hero",
+      "mood": "真人办公、协作",
+      "best_for": [
+        "cover",
+        "closing",
+        "divider-halfbleed"
+      ],
+      "industry": "generic",
+      "safe_text_zone": "left",
+      "scrims": [
+        "scrim-left"
+      ],
+      "note": "行业中性的真人办公场景，任何客户都能用；缺对应行业 hero 时的兜底选择",
+      "built_in_clear_zone": false
+    },
+    {
+      "file": "assets/concept/concept_workflow_loop.png",
+      "tier": "concept",
+      "mood": "流程闭环示意",
+      "best_for": [
+        "process",
+        "divider-halfbleed"
+      ],
+      "industry": "manufacturing/logistics",
+      "safe_text_zone": null,
+      "scrims": [
+        "scrim-feather",
+        "scrim-band-tb"
+      ],
+      "note": "含仓储叉车道具，非制造物流行业慎用",
+      "built_in_clear_zone": false
+    },
+    {
+      "file": "assets/concept/concept_data_cleaning.png",
+      "tier": "concept",
+      "mood": "清洗前后对照",
+      "best_for": [
+        "case",
+        "divider-halfbleed"
+      ],
+      "industry": "generic",
+      "safe_text_zone": null,
+      "scrims": [
+        "scrim-feather",
+        "scrim-band-tb"
+      ],
+      "built_in_clear_zone": false
+    },
+    {
+      "file": "assets/concept/concept_table_matching.png",
+      "tier": "concept",
+      "mood": "多表匹配示意",
+      "best_for": [
+        "case",
+        "divider-halfbleed"
+      ],
+      "industry": "manufacturing/logistics",
+      "safe_text_zone": null,
+      "scrims": [
+        "scrim-feather",
+        "scrim-band-tb"
+      ],
+      "note": "含仓储叉车道具，非制造物流行业慎用",
+      "built_in_clear_zone": false
+    },
+    {
+      "file": "assets/concept/concept_data_pipeline.png",
+      "tier": "concept",
+      "mood": "数据链路",
+      "best_for": [
+        "case",
+        "process",
+        "divider-halfbleed"
+      ],
+      "industry": "generic",
+      "safe_text_zone": null,
+      "scrims": [
+        "scrim-feather",
+        "scrim-band-tb"
+      ],
+      "built_in_clear_zone": false
+    }
+  ],
+  "gaps": {
+    "$comment": "已知缺口，补图时优先级从高到低。补 hero 层用 scripts/duotone.js --tier hero 统一色调后入库。",
+    "hero": [
+      "finance 金融/银行/保险",
+      "retail 零售/电商",
+      "healthcare 医疗/医药",
+      "government 政务",
+      "energy 能源/电力"
+    ],
+    "concept": [
+      "行业中性的匹配/汇总示意图（现有两张绑在制造物流）"
+    ]
+  }
+}

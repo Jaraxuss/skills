@@ -90,15 +90,82 @@ red 实底白字，`radius:6–7px, padding:6–7px 14–16px`，14–15px semib
 
 ## 页型构图规范（对照样张）
 
-1. **封面**（`slide_a_cover`）：全幅 hero（`assets/brand/cover_hero_office.png` 或新生成的红白粉场景图）+ 渐变压字层；左列 = 徽章 → eyebrow → 两行大标题 → 一句副题 → 红短横线 + 主讲/客户 meta。
-2. **章节页**（`slide_b_divider`）：左列 = 红 chip「第 N 部分」+ `PART 0N / 0M` → 大标题 → 一句副题 → 五模块进度列表（当前项 ink+红点，其余 muted）；右侧圆角大图；底部框架流程条。**超过 10 页的 deck，每 4–5 个内容页必须插一张。**
+1. **封面**（`slide_a_cover`）：全幅 hero（`assets/hero/hero_office_generic.png` 或新生成的红白粉场景图）+ 渐变压字层；左列 = 徽章 → eyebrow → 两行大标题 → 一句副题 → 红短横线 + 主讲/客户 meta。
+2. **章节页**，两种变体交替用，同一 deck 里不要只用一种：
+   - `divider-split`（构图见样张 `slide_b_divider`）：左列从 `top:148px` 起 = 红 chip「第 N 部分」+ `PART 0N / 0M` → 大标题 32px → 一句副题 → 模块进度列表（当前项 ink+红点，其余 muted）；右侧 `740,180` 起放 460×360 圆角卡片图；底部框架流程条。
+   - `divider-halfbleed`：右侧 660px 放主图，上/下/右**三边出血**，视觉分量比 split 重，用来给长 deck 换气。图层顺序固定为四层：
+
+     | 层 | 内容 |
+     | --- | --- |
+     | 1 | atmosphere 底图铺满 + `scrim-wash`（白 55%）——给左侧文字区纹理，避免裸白 |
+     | 2 | 主图 `x:620` 起铺到右边缘，`cover` 裁切 |
+     | 3 | `scrim-feather`：主图左缘三段窄白条（60px×3，透明度 15/42/70），把硬边融进文字区 |
+     | 4 | `scrim-band-tb`：主图区上下柔光带，保护 logo 和页码 |
+
+     文字从 `top:180px` 起，大标题 34px，**文本宽度收窄到 480px**（否则会伸进出血图）。
+
+   **超过 10 页的 deck，每 4–5 个内容页必须插一张。**多于两张章节页时，两种变体交替。
 3. **案例页**（`slide_c_case`）：左列三张语义卡（业务问题⚠ / 处理规则⚙ / 输出结果✓，图标 chip 30px 圆角 9px）；右列代码面板 + **运行结果示意表（证据区，必须有）**；底部四步闭环流程条（末步实底）。
 4. **总结/矩阵页**（`slide_d_summary`）：干净表格 + pill 标签 + 底部结论带（浅粉渐变底 `linear-gradient(90deg,#FFF1F3,#FFF9FA)`、左侧 5×40px 红条、18px 结论句，关键词标红）。
 
-## 图像资产使用
+## 图像资产分层
 
-- `assets/brand/` 现有：`cover_hero_office`（封面/收尾）、`workflow_loop_scene`（流程环）、`data_cleaning_before_after`（清洗案例）、`table_matching_scene`（匹配案例）、`data_pipeline_scene`（链路页）。同一张图一个 deck 最多用两次（封面+收尾算一次复用）。
-- 新生成图像的 prompt 必须锁：红白粉主色、商务办公/供应链场景、画面内不出现文字、不要蓝色机械风。生成后不合色板就弃用。
+图库按**用途**分三层，不按行业铺矩阵。选图先定层，再定具体哪张。
+完整索引见 `assets/manifest.json`（每张图记录了适用页型、推荐蒙版、行业倾向、安全文字区）。
+
+| 层 | 目录 | 用途 | 行业相关性 | 一个 deck 内复用上限 |
+| --- | --- | --- | --- | --- |
+| atmosphere | `assets/atmosphere/` | halfbleed 章节页的左侧底纹、声明页、收尾页 | 无 | 3 次 |
+| hero | `assets/hero/` | 封面主视觉、halfbleed 出血主图 | 强 | 2 次 |
+| concept | `assets/concept/` | 案例页配图、流程页示意、halfbleed 出血主图 | 中 | 1 次 |
+
+分层的依据是**同一张图在不同位置的信息负载不一样**：底纹只提供质感，观众不会去读它，所以 4 张行业中性的就够覆盖所有客户；出血主图和案例配图要被看清，才需要行业感。真正强绑行业的只有封面，而一个 deck 只有一张封面——按行业铺矩阵会让图库爆炸，收益却只落在这一页上。
+
+### atmosphere（氛围底图）
+
+`atmosphere_radial_rays`（最留白、最安全的通用底）、`atmosphere_orbit_grid`（结构与科技感）、`atmosphere_mesh_flow`（流程/链路类）、`atmosphere_ribbon_wave`（柔和动势，适合收尾）。
+
+这 4 张是人工筛选的 16:9 生成图。选择时以 `assets/manifest.json` 中的 `best_for`、`safe_text_zone` 和 `note` 为准，不按文件名猜用途。新增氛围图时先语义化命名，再写入 manifest；没有 manifest 条目的图片视为候选素材，不得直接使用。
+
+### concept（概念示意图）
+
+`concept_workflow_loop`、`concept_data_cleaning`、`concept_table_matching`、`concept_data_pipeline`。
+
+这几张是信息量大的插画，有假表格、箭头、场景道具。可以独占图区（案例页右侧、`divider-halfbleed` 的出血主图），但**不能当文字背景**——它们靠小元素承载意义，压上蒙版会糊成一团色块。同时它们的仓储/叉车道具把行业锁在制造物流，其他行业慎用。
+
+### 新增图像
+
+照片或生成图入库前先跑 `scripts/duotone.js` 统一色调，不要求图源自带红白粉：
+
+```
+node scripts/duotone.js <输入图> <输出图> --tier atmosphere|hero|concept
+```
+
+生成图的 prompt 必须锁：商务办公/业务场景、画面内不出现任何文字或 UI、不要蓝色机械风。氛围层的 prompt 额外加一条：**画面简单、主体少、大面积负空间**——这是氛围图区别于概念图的关键，少了这条会生成出一堆没法铺底的插画。
+
+## 蒙版配方（scrim）
+
+图片上压字一律走这些配方，不要每页现调透明度。pptxgenjs 没有渐变填充，渐变一律用几段不同 `transparency` 的白矩形近似（`transparency:20` = 80% 不透明白）。实现见 `build_deck.js` 的 `drawScrim()`。
+
+| 配方 | 用途 | 分段（起点, 宽/高, transparency） |
+| --- | --- | --- |
+| `scrim-left` | 封面，左文字右图 | `(0,340,6) (340,200,20) (540,200,55) (740,160,80)` |
+| `scrim-feather` | 半出血图的左缘融合 | 从图左缘起 `(+0,60,15) (+60,60,42) (+120,60,70)` |
+| `scrim-band-tb` | 出血图上下柔光带 | 上 `(0,32,12) (32,32,30) (64,34,62)`；下 `(620,34,58) (654,32,26) (686,34,8)` |
+| `scrim-wash` | atmosphere 底图铺满后整体退一档 | 整幅白 `transparency:40–55` |
+
+`scrim-band-tb` 是必需的，不是可选修饰：出血图的画面内容不可控，右上 logo 和右下页码经常落在深色区域。实测未加带子时页码与背景的亮度差只有 10–26%，远低于门槛。
+
+### 对比度硬要求
+
+- 标题、正文与其正下方背景的亮度差 ≥ 55%。
+- logo、页码等家具与其背景的亮度差 ≥ 45%。
+- 达不到就加大 scrim 或换图，**不要改文字颜色去迁就图**。
+- 判定方法：该区域转灰度取平均，与文字色灰度值相减除以 255。ink `17181C` ≈ 24，red `F0263C` ≈ 85。
+
+### 不要过度压
+
+`atmosphere` 层的图本身就淡（右侧视觉区灰度约 230），再叠 80% 白会压成一张白纸，比留白更空洞。这一层只配 `scrim-wash` 40–55，**重蒙版是给全彩照片准备的**，不要套到氛围图上。
 
 ## QA 硬门槛（渲染后逐页核对，任一不过即返修）
 

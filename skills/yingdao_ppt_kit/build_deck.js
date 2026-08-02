@@ -44,12 +44,23 @@ const px = (n) => n / PX;
 const IN_W = 13.333;
 const IN_H = 7.5;
 
-const LOGO = path.join(__dirname, "assets", "yingdao_logo.png");
-const HERO = path.join(__dirname, "assets", "brand", "cover_hero_office.png");
-const IMG_WORKFLOW = path.join(__dirname, "assets", "brand", "workflow_loop_scene.png");
-const IMG_CLEAN = path.join(__dirname, "assets", "brand", "data_cleaning_before_after.png");
-const IMG_MATCH = path.join(__dirname, "assets", "brand", "table_matching_scene.png");
-const IMG_PIPE = path.join(__dirname, "assets", "brand", "data_pipeline_scene.png");
+const asset = (...p) => path.join(__dirname, "assets", ...p);
+
+const LOGO = asset("yingdao_logo.png");
+// hero 层：封面主视觉
+const HERO = asset("hero", "hero_office_generic.png");
+// concept 层：只放内容区，禁止铺底
+const IMG_WORKFLOW = asset("concept", "concept_workflow_loop.png");
+const IMG_CLEAN = asset("concept", "concept_data_cleaning.png");
+const IMG_MATCH = asset("concept", "concept_table_matching.png");
+const IMG_PIPE = asset("concept", "concept_data_pipeline.png");
+// atmosphere 层：章节页铺底，必配 scrim
+const ATMO = {
+  orbit: asset("atmosphere", "atmosphere_orbit_grid.png"),
+  radial: asset("atmosphere", "atmosphere_radial_rays.png"),
+  mesh: asset("atmosphere", "atmosphere_mesh_flow.png"),
+  ribbon: asset("atmosphere", "atmosphere_ribbon_wave.png"),
+};
 
 // fresh shadow objects each time (pptxgenjs mutates)
 const cardShadow = () => ({ type: "outer", angle: 90, offset: 3, blur: 9, color: T.ink, opacity: 0.08 });
@@ -284,54 +295,134 @@ function drawPillFlow(s, steps, activeIndex) {
   });
 }
 
-// ---------- SLIDE 3: chapter divider ----------
-function slideDivider(pn, total, partNum, partTotal, bigTitle, subtitle, modules, activeIdx, imgPath) {
+/**
+ * 蒙版配方，数值见 references/design-tokens.md「蒙版配方」。
+ * pptxgenjs 没有渐变填充，用几段不同 transparency 的白矩形近似横向渐变。
+ */
+function drawScrim(s, kind, opts = {}) {
+  if (kind === "left") {
+    // 封面用：左侧压到近全白，到画布 58% 处收干净
+    [[0, 340, 6], [340, 200, 20], [540, 200, 55], [740, 160, 80]].forEach(([x, w, tr]) => {
+      s.addShape(pres.ShapeType.rect, {
+        x: px(x), y: 0, w: px(w), h: IN_H,
+        fill: { color: T.white, transparency: tr }, line: { type: "none" },
+      });
+    });
+  } else if (kind === "feather") {
+    // 半出血图的左缘羽化：三段窄白条，把硬边融进文字区
+    const x0 = opts.x || 620;
+    [[x0, 60, 15], [x0 + 60, 60, 42], [x0 + 120, 60, 70]].forEach(([x, w, tr]) => {
+      s.addShape(pres.ShapeType.rect, {
+        x: px(x), y: 0, w: px(w), h: IN_H,
+        fill: { color: T.white, transparency: tr }, line: { type: "none" },
+      });
+    });
+  } else if (kind === "band-tb") {
+    // 出血图上下柔光带：保护 logo（右上）和页码（右下）的可读性。
+    // 图片内容不可控，靠这两道带子把家具区亮度拉到能压字，同时保持出血观感。
+    const x = px(opts.x || 0);
+    const w = IN_W - x;
+    [[0, 32, 12], [32, 32, 30], [64, 34, 62]].forEach(([y, h, tr]) => {
+      s.addShape(pres.ShapeType.rect, {
+        x, y: px(y), w, h: px(h),
+        fill: { color: T.white, transparency: tr }, line: { type: "none" },
+      });
+    });
+    [[620, 34, 58], [654, 32, 26], [686, 34, 8]].forEach(([y, h, tr]) => {
+      s.addShape(pres.ShapeType.rect, {
+        x, y: px(y), w, h: px(h),
+        fill: { color: T.white, transparency: tr }, line: { type: "none" },
+      });
+    });
+  } else if (kind === "wash") {
+    // atmosphere 底图铺满后的轻压，只是把纹理再退一档，不做压字用
+    s.addShape(pres.ShapeType.rect, {
+      x: 0, y: 0, w: IN_W, h: IN_H,
+      fill: { color: T.white, transparency: opts.transparency ?? 45 }, line: { type: "none" },
+    });
+  }
+}
+
+const FRAMEWORK = ["定位与分工", "Pandas 基础", "业务案例", "闭环与总结"];
+
+// ---------- chapter divider ----------
+// variant "split"     ：左文 + 右侧圆角卡片图（样张 slide_b_divider）
+// variant "halfbleed" ：左文 + 右侧图三边出血，视觉分量更重，用来给长 deck 换气
+//                      底层垫 atmosphere 纹理，左侧文字区不留裸白
+function slideDivider(pn, total, partNum, partTotal, bigTitle, subtitle, modules, activeIdx, opts = {}) {
+  const variant = opts.variant || "split";
   const s = pres.addSlide();
-  addBackground(s);
+
+  if (variant === "halfbleed") {
+    s.background = { color: T.white };
+    // 1. atmosphere 铺底，给左侧文字区一点纹理
+    s.addImage({ path: opts.atmo || ATMO.radial, x: 0, y: 0, w: IN_W, h: IN_H });
+    drawScrim(s, "wash", { transparency: 40 });
+    // 2. 主图占右侧 660px，上/下/右三边出血
+    const imgX = 620;
+    s.addImage({
+      path: opts.img, x: px(imgX), y: 0, w: IN_W - px(imgX), h: IN_H,
+      sizing: { type: "cover", w: IN_W - px(imgX), h: IN_H },
+    });
+    // 3. 左缘羽化，硬边融进文字区
+    drawScrim(s, "feather", { x: imgX });
+    // 4. 上下柔光带，保证 logo 和页码压在图上仍可读
+    drawScrim(s, "band-tb", { x: imgX });
+  } else {
+    addBackground(s);
+  }
   addFurniture(s, pn, total);
 
-  // left column
+  // halfbleed 整体下移一档、标题加大，让画面呼吸
+  const topY = variant === "halfbleed" ? 180 : 148;
+  const titleSize = variant === "halfbleed" ? 34 : 32;
+
   // chip
   s.addShape(pres.ShapeType.roundRect, {
-    x: px(96), y: px(148), w: px(120), h: px(30),
+    x: px(96), y: px(topY), w: px(120), h: px(30),
     fill: { color: T.red }, line: { type: "none" }, rectRadius: 0.06,
   });
   s.addText(`第 ${partNum} 部分`, {
-    x: px(96), y: px(148), w: px(120), h: px(30),
+    x: px(96), y: px(topY), w: px(120), h: px(30),
     fontFace: FONT, fontSize: 11, bold: true, color: T.white, align: "center", valign: "middle", margin: 0,
   });
   s.addText(`PART 0${partNum} / 0${partTotal}`, {
-    x: px(228), y: px(148), w: px(200), h: px(30),
+    x: px(228), y: px(topY), w: px(200), h: px(30),
     fontFace: FONT, fontSize: 12, color: T.muted, bold: true, valign: "middle", charSpacing: 2, margin: 0,
   });
+  // halfbleed 的文字区被右侧出血图压到 620px 以内，文本宽度要收窄
+  const textW = variant === "halfbleed" ? 480 : 620;
+
   // big title
   s.addText(bigTitle, {
-    x: px(96), y: px(196), w: px(620), h: px(120),
-    fontFace: FONT, fontSize: 32, bold: true, color: T.ink, margin: 0, lineSpacingMultiple: 1.25,
+    x: px(96), y: px(topY + 48), w: px(textW), h: px(130),
+    fontFace: FONT, fontSize: titleSize, bold: true, color: T.ink, margin: 0, lineSpacingMultiple: 1.25,
   });
   s.addText(subtitle, {
-    x: px(96), y: px(324), w: px(620), h: px(44),
+    x: px(96), y: px(topY + 186), w: px(textW), h: px(52),
     fontFace: FONT, fontSize: 13, color: T.body, margin: 0, lineSpacingMultiple: 1.55,
   });
-  // module list
+
+  // 模块进度列表，单列
+  const listY = topY + 250;
   modules.forEach((m, i) => {
-    const y = 388 + i * 38;
+    const y = listY + i * 36;
     const active = i === activeIdx;
     s.addShape(pres.ShapeType.ellipse, {
-      x: px(96), y: px(y + 12), w: px(9), h: px(9),
+      x: px(96), y: px(y + 11), w: px(9), h: px(9),
       fill: { color: active ? T.red : "D8DBDF" }, line: { type: "none" },
     });
     s.addText(`0${i + 1}   ${m}`, {
-      x: px(116), y: px(y), w: px(560), h: px(30),
+      x: px(116), y: px(y), w: px(textW - 20), h: px(28),
       fontFace: FONT, fontSize: 12.5, bold: active,
       color: active ? T.ink : T.muted, margin: 0,
     });
   });
 
-  // right image
-  if (imgPath) {
+  // right image（仅 split 变体；halfbleed 的图已在上面出血铺好）
+  if (variant === "split" && opts.img) {
     s.addImage({
-      path: imgPath, x: px(740), y: px(180), w: px(460), h: px(360),
+      path: opts.img, x: px(740), y: px(180), w: px(460), h: px(360),
       sizing: { type: "cover", w: px(460), h: px(360) },
     });
     s.addShape(pres.ShapeType.roundRect, {
@@ -344,7 +435,7 @@ function slideDivider(pn, total, partNum, partTotal, bigTitle, subtitle, modules
 
   // bottom pill flow: framework parts
   const flowSteps = [];
-  for (let i = 1; i <= partTotal; i++) flowSteps.push(`0${i} · ${["定位与分工", "Pandas 基础", "业务案例", "闭环与总结"][i - 1]}`);
+  for (let i = 1; i <= partTotal; i++) flowSteps.push(`0${i} · ${FRAMEWORK[i - 1]}`);
   drawPillFlow(s, flowSteps, partNum - 1);
 }
 
@@ -1228,7 +1319,7 @@ slideDivider(3, TOTAL, 1, 4,
   "第一部分\n定位与分工",
   "影刀 × Python：先分清工具边界，再谈组合价值。",
   ["为什么第二天要引入 Python", "影刀与 Python 的角色分工", "Excel 与 Python 数据结构映射", "NumPy 与 Pandas 各自的位置", "Pandas 常用能力清单"],
-  1, IMG_WORKFLOW,
+  1, { variant: "halfbleed", img: HERO, atmo: ATMO.orbit },
 );                                  // 3
 slideRoleSplit(4, TOTAL);          // 4
 slideConceptExcel(5, TOTAL);       // 5
@@ -1237,7 +1328,7 @@ slideDivider(7, TOTAL, 2, 4,
   "第二部分\nPandas 基础动作",
   "读表、看表、筛选、算列、清缺失、输出——六件套。",
   ["读取 Excel 变成 DataFrame", "查看数据结构与形状", "按字段筛选与多条件筛选", "新增计算列", "缺失值处理与格式转换", "输出结果表"],
-  0, IMG_CLEAN,
+  0, { variant: "split", img: IMG_CLEAN },
 );                                  // 7
 slidePandasToolbox(8, TOTAL);      // 8
 slideCase1(9, TOTAL);              // 9
@@ -1245,7 +1336,7 @@ slideDivider(10, TOTAL, 3, 4,
   "第三部分\n典型业务案例",
   "四类高频 Excel 场景：清洗、匹配、筛选、汇总。",
   ["案例 1：批量清洗导出报表", "案例 2：多表匹配替代 VLOOKUP", "案例 3：多条件筛选异常清单", "案例 4：分组汇总替代透视表"],
-  1, IMG_MATCH,
+  1, { variant: "halfbleed", img: IMG_MATCH, atmo: ATMO.mesh },
 );                                  // 10
 slideCase2(11, TOTAL);             // 11
 slideCase3(12, TOTAL);             // 12
