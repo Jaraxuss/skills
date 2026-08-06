@@ -43,7 +43,20 @@ Use this checklist before delivering a PPT.
 - Any source material or generated image usage should be reflected in the final response.
 - Deck-level terms, field names, customer names, and recurring frameworks should stay consistent with `deck_context`.
 - Slide-specific examples should be self-contained through `local_context`, not hidden assumptions from previous pages.
-- Speaker notes may contain delivery cues, but visible pages must not contain internal coaching language.
+- Visible pages must not contain internal coaching language.
+
+## Speaker Notes Checks
+
+- Unless the user explicitly opted out, every main slide has a non-empty direct-readable talk track.
+- Main-slide notes target about 120 seconds and should normally contain 360-480 Chinese characters excluding `[Sources]`; adjust for meaningful pauses, demos, or dense evidence rather than padding with repetition.
+- Every non-final main slide contains exactly one `\n\n----\n\n` separator followed by a natural next-slide bridge. It must not say “click next page” or other operating instructions.
+- The final main slide uses the post-separator block for a close, leadership ask, or meeting wrap-up. Appendix notes explain on-demand playback or expansion and the return point to the main story.
+- Notes supplement the visible slide with context, value, boundaries, and decisions. They do not restate the slide line by line or contain internal production prompts.
+- Customer names, owners, dates, project status, completion claims, and quantitative results agree with the source materials and visible copy.
+- NotebookLM appears in notes or sources only when the user explicitly requested it. Otherwise use the user-provided brief, PPT, attachments, and source materials only.
+- If the user opts out of talk tracks, omit talk-track bodies and bridges; retain `[Sources]` blocks when required by the system `pptx` skill.
+- Read back notes through Artifact Tool inspection or the OOXML verifier and confirm every notes record maps to the correct visual slide.
+- For notes-only OOXML patching, compare slide count, master count, media count, and SHA-256 hashes for `ppt/media/` and `ppt/embeddings/` before and after the patch.
 
 ## Delivery Evidence
 

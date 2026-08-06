@@ -1,0 +1,5 @@
+interface:
+  display_name: "影刀对客 PPT"
+  short_description: "制作影刀风格对客 PPT、演讲备注与交付质量全面检查"
+  brand_color: "#F0263C"
+  default_prompt: "使用 $yingdao-ppt-kit 制作影刀风格对客 PPT，并默认为每个主汇报页添加约 2 分钟、可直接朗读且带下一页衔接的演讲备注。"

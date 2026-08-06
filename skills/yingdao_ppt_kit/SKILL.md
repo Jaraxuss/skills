@@ -1,6 +1,6 @@
 ---
 name: yingdao-ppt-kit
-description: Create high-quality Yingdao-style customer-facing PowerPoint decks from Markdown creative briefs, using structured slide plans, AI-led visual judgment, Yingdao visual assets, optional sample-slide gates, rendering, and QA instead of fixed script templates. Use when the agent needs to make customer training, sales, delivery, project recap, or scenario co-creation PPTs for Yingdao/RPA topics, especially when the user provides Markdown source material, asks for a brief.md workflow, wants AI-led aesthetics, references Yingdao-style PPTs, or wants to avoid repetitive JSON/python-pptx output. / 基于 Markdown 创意简报生成高质量影刀风格对客 PPT，通过结构化 slide plan、AI 逐页规划版式、影刀视觉资产、可选样张 gate、渲染和 QA，而不是套固定脚本模板。适用于影刀/RPA 相关的客户培训、售前汇报、交付复盘、项目总结和场景共创材料，尤其是用户提供 Markdown 资料、要求 brief.md 工作流、希望 AI 做审美判断、参考影刀风格样张，或明确不想要重复的 JSON/python-pptx 脚本产物时。
+description: Create or improve high-quality Yingdao-style customer-facing PowerPoint decks from creative briefs, project materials, or existing PPTX files. Use for Yingdao/RPA customer training, sales, delivery, project recaps, and scenario co-creation when polished AI-led visuals, editable slides, rendered QA, or direct-readable presenter notes are needed. By default add approximately two-minute speaker notes for every main slide with a natural next-slide transition; disable talk tracks only when the user explicitly asks for no notes. Use NotebookLM only when the user explicitly requests it. / 基于创意简报、项目资料或现有 PPTX 创建或优化影刀风格对客 PPT；默认给每个主汇报页添加约两分钟、可直接朗读并带下一页衔接的讲解备注，除非用户明确不要备注。NotebookLM 仅在用户主动要求时使用。
 ---
 
 # Yingdao PPT Kit
@@ -11,7 +11,7 @@ Use this skill to create polished Yingdao-style customer PPTs from a Markdown cr
 
 ## Trigger / When to Use
 
-Use this skill when the task is to create or improve a customer-facing Yingdao/RPA PowerPoint deck from Markdown, a course outline, project notes, or a creative brief.
+Use this skill when the task is to create or improve a customer-facing Yingdao/RPA PowerPoint deck from Markdown, a course outline, project notes, a creative brief, or an existing PPTX. Generate direct-readable speaker notes by default.
 
 当用户要基于 Markdown、课程大纲、项目资料或创意简报生成/优化影刀或 RPA 相关对客 PPT 时，使用本 Skill。
 
@@ -30,6 +30,7 @@ Typical triggers:
    - `references/visual-style.md` for Yingdao visual language.
    - `references/slide-patterns.md` for page types, rhythm, and anti-patterns.
    - `references/customer-copy.md` for customer-facing wording rules.
+   - `references/speaker-notes.md` REQUIRED unless the user explicitly requests no talk track: note schema, pacing, transition rules, context policy, and PPTX write routes.
    - `references/qa-checklist.md` before final delivery.
 3. 使用系统 `pptx` skill（PowerPoint 系统技能，pptxgenjs 生成路线；旧版文档称 `presentations`）创建 PowerPoint，并遵守其要求，包括 rendered slide inspection 和 QA。本 skill 的 design tokens 与系统 skill 的通用设计建议冲突时，以 design tokens 为准（影刀品牌语言允许红竖条标题、卡片左色条等元素）。
 4. 先输出内部 structured slide plan，再开始制作。每页都要明确：
@@ -39,16 +40,23 @@ Typical triggers:
    - `layout family`：图文页、流程页、矩阵页、案例页、代码页、信息图等。
    - `visual asset`：logo、截图、generated image、业务流程图、表格、图标；标注 `strict input asset` 或 `style reference`。
    - `density`：low / medium / high，客户现场可读，不把讲稿塞进页面。
-   - `speaker notes`：只放讲解辅助，不把内部提示写到画面上。
+   - `note_role`：opening、explanation、case、decision、closing 或 appendix。
+   - `note_context`：本页需要解释的背景、事实、限制和客户关注点。
+   - `target_seconds`：主汇报页默认 120 秒；附录按需讲解。
+   - `transition_intent`：下一页衔接要完成的逻辑动作；最终主汇报页写收束或请示。
+   - `sources`：本页使用的事实与资产来源。
+   - `is_appendix`：是否属于按需讲解页面。
    - `local_context`：把本页需要的字段、规则、案例背景写清楚，避免引用“上页/上面那个框架”这类隐式上下文。
-5. 用 AI-led design judgment 制作 deck：
+5. 生成备注，默认让每张主汇报页具备可直接朗读的正文和下一页衔接。只在用户明确说“不需要备注”“不要讲稿”或“只制作页面”时关闭讲稿与衔接；外部来源的 `[Sources]` 仍按系统 `pptx` skill 要求保留。未被用户主动提及的 NotebookLM 不得查询、引用或列为缺失项。
+6. 用 AI-led design judgment 制作 deck：
    - 所有数值（字号、边距、圆角、投影、色值、家具位置）按 `references/design-tokens.md` 执行；judgment 用在构图选择、密度分配和资产选择上。
    - 每 3-5 页改变一次视觉节奏；超过 10 页的 deck 每 4-5 个内容页插一张章节页。章节页有 `divider-split`（左文右图，样张 `slide_b_divider`）和 `divider-halfbleed`（右侧图三边出血 + 左侧 atmosphere 底纹）两种变体，多于两张时交替使用。
    - 主动使用 `assets/atmosphere/` 铺底图、`assets/concept/` 示意图、screenshots、generated images、diagrams 或 infographic；封面必须有 hero 视觉。
    - 代码页只展示关键片段（≤12 行），保证字号和业务解释层级。
    - 业务案例页要先讲业务问题，再讲处理规则和输出结果，并带"运行结果示意"证据区（见样张 `slide_c_case`）。
-6. 按需使用 lightweight sample gate：默认可直接生成 `.pptx`；当材料是高价值客户交付、风格方向不明确，或用户明确要求精修时，先生成并渲染 1 页代表性样张确认视觉身份，再扩展到全 deck。
-7. 生成后必须 render all slides，查看 contact sheet 和 full-size previews；发现重叠、越界、中文乱码、文字过小、图片缺失、strict input asset 未正确使用或页面重复感时，先返修再交付。
+7. 用系统 `pptx` skill 的 Artifact Tool 写入新建或正常导入 deck 的 `slide.speakerNotes`，再通过 `presentation.inspect({ kind: "notes" })` 回读。对于必须原样保留视频、音频、OLE 或其他嵌入对象的现有 PPTX，改用 `scripts/patch_speaker_notes.mjs` 做 notes-only OOXML patch；该路径不依赖 AppleScript。
+8. 按需使用 lightweight sample gate：默认可直接生成 `.pptx`；当材料是高价值客户交付、风格方向不明确，或用户明确要求精修时，先生成并渲染 1 页代表性样张确认视觉身份，再扩展到全 deck。
+9. 生成后必须 render all slides，查看 contact sheet 和 full-size previews；发现重叠、越界、中文乱码、文字过小、图片缺失、strict input asset 未正确使用或页面重复感时，先返修再交付。完成 `references/qa-checklist.md` 的 notes checks，并回读每页备注。
 
 ## Inputs / 输入
 
@@ -62,6 +70,7 @@ The brief must capture:
 - Content scope and source material.
 - Visual references, brand assets, useful image ideas, and asset roles (`strict input asset` vs `style reference`).
 - Page-level goals and structured slide plan fields when known.
+- Optional `speaker_notes` configuration. If omitted, use the defaults in `references/speaker-notes.md`.
 - Forbidden internal wording and visual anti-patterns.
 - Acceptance criteria.
 
@@ -79,6 +88,10 @@ Use `brief.md` as a template. For a filled regression sample, see `examples/brie
 - MUST 区分 `strict input asset` 和 `style reference`；严格输入资产需要保留内容、标签、数据关系或业务含义。
 - MUST 让页面文字面向客户可直接展示，避免内部备课语、提示语和 AI 味说明。
 - MUST 让每个核心知识点对应业务例子、业务流程或输出结果。
+- MUST 默认生成每个主汇报页的 direct-readable speaker notes，目标约 120 秒，并使用空行、`----`、空行分隔正文与下一页衔接话术；最后一个主汇报页改用会议收束或领导请示。
+- MUST 让备注补充页面未呈现的背景、价值、边界和决策信息，而不是逐字朗读页面；不得把内部制作提示写入讲稿。
+- MUST 只在用户明确请求时使用 NotebookLM；默认上下文是用户提供的 brief、PPT、附件、需求表和会议材料。
+- MUST 对已有严格媒体资产的 PPTX 使用 `scripts/patch_speaker_notes.mjs`，并检查媒体、嵌入对象与备注映射。
 - REQUIRED 在交付前完成 rendered-slide QA；若仍有问题，必须明确披露。
 - NEVER 把 `yingdao_ppt_builder.py` 作为客户版最终 PPT 的默认生成路线。
 - NEVER 默认制作 full-slide image PPT，除非用户明确接受不可编辑图片页。
@@ -86,6 +99,7 @@ Use `brief.md` as a template. For a filled regression sample, see `examples/brie
 - NEVER 让整套 deck 都是重复卡片、重复代码框或单一配色节奏。
 - NEVER 在代码页堆满完整脚本；只展示关键 snippet，并配业务解释。
 - NEVER 把 source material 原文大段搬到页面上。
+- NEVER 因为备注信息不足而补造客户事实、运行成果、量化收益、领导观点或项目承诺。
 
 ## Assets / 资产
 
@@ -101,9 +115,12 @@ Use `brief.md` as a template. For a filled regression sample, see `examples/brie
 ### 工具脚本
 
 - `scripts/duotone.js`：把任意来源的图片映射成红白粉调，入库前跑一遍。图源因此不必自带品牌配色。
+- `scripts/patch_speaker_notes.mjs`：对现有 `.pptx` 进行跨平台 notes-only OOXML 更新，适用于需严格保留媒体或嵌入对象的 deck。格式、JSON 契约和验证要求见 `references/speaker-notes.md`。
 
 ```bash
 node scripts/duotone.js <输入图> <输出图> --tier atmosphere|hero|concept
+
+node scripts/patch_speaker_notes.mjs --input <source.pptx> --output <target.pptx> --notes <notes.json> --verify
 ```
 
 ## Legacy Tools
@@ -153,4 +170,5 @@ Expected approach:
 - Final output must be a `.pptx`.
 - Include the final PPTX path in the response.
 - Mention source material, reference deck, image asset, generated visual, rendered QA result, and known limitations if any.
+- State that direct-readable speaker notes were added by default, or that the user explicitly opted out. When an OOXML patch route is used, report the media-preservation verification result.
 - Do not deliver before rendered-slide QA passes or known issues are disclosed.
