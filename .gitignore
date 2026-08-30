@@ -152,6 +152,20 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Python local environments and test artifacts
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local biometric data and caches for the Feishu speaker-insights Skill.
+# Keep these outside the repository whenever possible.
+skills/feishu-speaker-insights/.data/
+skills/feishu-speaker-insights/.cache/
+skills/feishu-speaker-insights/.runs/
+skills/feishu-speaker-insights/.output/
+
 # OS-generated files
 .DS_Store
 
