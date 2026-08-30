@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any
 
 import numpy as np
@@ -161,12 +162,22 @@ class EmbeddingEngine:
             raise RuntimeError(f"Unexpected embedding shape: {result.shape}")
         return result
 
-    def embed_candidates(self, wav_path: Path, candidates: list[Candidate]) -> np.ndarray:
+    def embed_candidates(
+        self,
+        wav_path: Path,
+        candidates: list[Candidate],
+        should_cancel: Callable[[], bool] | None = None,
+        on_progress: Callable[[int, int], None] | None = None,
+    ) -> np.ndarray:
         vectors: list[np.ndarray] = []
         with sf.SoundFile(wav_path) as audio:
-            for candidate in candidates:
+            for index, candidate in enumerate(candidates, start=1):
+                if should_cancel and should_cancel():
+                    raise InterruptedError("review_cancelled")
                 wave = read_window(audio, candidate.start, candidate.end, self.sample_rate)
                 vectors.append(self.embed(wave))
+                if on_progress:
+                    on_progress(index, len(candidates))
         if not vectors:
             return np.empty((0, int(MODEL_CONFIG["embedding_size"])), dtype=np.float32)
         return np.stack(vectors).astype(np.float32)

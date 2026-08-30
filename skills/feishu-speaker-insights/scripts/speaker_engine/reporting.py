@@ -21,7 +21,9 @@ def person_name(person_id: str | None, people: dict[str, dict[str, Any]]) -> str
 
 
 def group_viewpoints(
-    resolved: list[dict[str, Any]], viewpoints: list[dict[str, Any]]
+    resolved: list[dict[str, Any]],
+    viewpoints: list[dict[str, Any]],
+    non_substantive: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     rows_by_label = {row["transcript_label"]: row for row in resolved}
     groups: dict[str, dict[str, Any]] = {}
@@ -29,8 +31,8 @@ def group_viewpoints(
         result = rows_by_label.get(item["transcript_label"])
         if result is None:
             continue
-        if result.get("final_person_id"):
-            key = f"person:{result['final_person_id']}"
+        if result.get("final_identity_key"):
+            key = result["final_identity_key"]
             title = result["final_identity"]
         else:
             key = f"label:{item['transcript_label']}"
@@ -43,6 +45,7 @@ def group_viewpoints(
                 "person_id": result.get("final_person_id"),
                 "labels": [],
                 "items": [],
+                "non_substantive": [],
             },
         )
         if item["transcript_label"] not in group["labels"]:
@@ -50,8 +53,8 @@ def group_viewpoints(
         if len(group["items"]) < 5:
             group["items"].append(item)
     for row in resolved:
-        if row.get("final_person_id"):
-            key = f"person:{row['final_person_id']}"
+        if row.get("final_identity_key"):
+            key = row["final_identity_key"]
             title = row["final_identity"]
         else:
             key = f"label:{row['transcript_label']}"
@@ -64,10 +67,20 @@ def group_viewpoints(
                 "person_id": row.get("final_person_id"),
                 "labels": [],
                 "items": [],
+                "non_substantive": [],
             },
         )
         if row["transcript_label"] not in group["labels"]:
             group["labels"].append(row["transcript_label"])
+    for item in non_substantive:
+        result = rows_by_label.get(item["transcript_label"])
+        if result is None:
+            continue
+        if result.get("final_identity_key"):
+            key = result["final_identity_key"]
+        else:
+            key = f"label:{item['transcript_label']}"
+        groups[key]["non_substantive"].append(item)
     return list(groups.values())
 
 
@@ -78,11 +91,12 @@ def write_outputs(
     validated_context: list[dict[str, Any]],
     rejected_context: list[dict[str, Any]],
     validated_viewpoints: list[dict[str, Any]],
+    non_substantive_labels: list[dict[str, Any]],
     rejected_viewpoints: list[dict[str, Any]],
     candidates: list[dict[str, Any]],
 ) -> dict[str, str]:
     people = {item["person_id"]: item for item in bundle["candidate_people"]}
-    grouped = group_viewpoints(resolved, validated_viewpoints)
+    grouped = group_viewpoints(resolved, validated_viewpoints, non_substantive_labels)
     payload = {
         "schema_version": 1,
         "run_id": bundle["run_id"],
@@ -99,6 +113,7 @@ def write_outputs(
         "viewpoints": {
             "by_identity": grouped,
             "validated": validated_viewpoints,
+            "non_substantive_labels": non_substantive_labels,
             "rejected": rejected_viewpoints,
         },
         "profile_candidates": candidates,
@@ -150,7 +165,7 @@ def write_outputs(
         f"- 客户：{bundle['customer']['name']}（`{bundle['customer']['id']}`）",
         f"- 录音：{bundle['meeting']['title']}（`{bundle['meeting']['id']}`）",
         f"- 模型：`{bundle['model']['id']}@{bundle['model']['revision']}`，CPU，192 维。",
-        f"- 接受阈值：`{calibration['accept_threshold']:.4f}`；分差阈值：`{calibration['margin_threshold']:.4f}`；来源：`{calibration['source']}`。",
+        f"- 内部自动判定阈值（无需用户配置）：相似度 `{calibration['accept_threshold']:.4f}`；分差 `{calibration['margin_threshold']:.4f}`；来源：`{calibration['source']}`。",
         "",
         "## 说话人匹配",
         "",
@@ -203,8 +218,11 @@ def write_outputs(
                 lines.append(
                     f"- `{item['timestamp']}` **{item['category']}**：{item['point']}"
                 )
-        else:
-            lines.append("- 当前没有从该标签转写中验证出可独立归纳的核心观点。")
+        elif group["non_substantive"]:
+            for item in group["non_substantive"]:
+                lines.append(
+                    f"- `{item['timestamp']}` **非实质发言**：{item['reason']}"
+                )
         lines.append("")
 
     if candidates:
@@ -220,7 +238,7 @@ def write_outputs(
         [
             "## 限制",
             "",
-            "- 未达到分数、分差或语音量要求时保留未知，不强制映射。",
+            "- 第一名和第二名始终作为候选集声纹排序展示；内部阈值只控制是否声明为已匹配及是否允许进入声纹候选库。",
             "- 转写标签可能合并多人；混合标签不会归入个人观点。",
             "- 新会议只生成待确认向量，确认后才会创建新的声纹版本。",
             "",

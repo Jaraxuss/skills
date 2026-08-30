@@ -1,0 +1,21 @@
+[Unit]
+Description=Feishu speaker enrollment review console
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/.openclaw/workspace/skills/feishu-speaker-insights
+Environment=FEISHU_SPEAKER_CUSTOMERS_ROOT=/home/velen/velen/客户
+Environment=FEISHU_SPEAKER_CPU_THREADS=3
+Environment=CONDA_DEFAULT_ENV=voiceprint-poc
+Environment=PATH=/home/velen/miniconda3/envs/voiceprint-poc/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=%h/miniconda3/envs/voiceprint-poc/bin/python scripts/speaker_insights.py review serve --host 192.168.31.169 --port 8765 --base-url http://192.168.31.169:8765
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077
+
+[Install]
+WantedBy=default.target

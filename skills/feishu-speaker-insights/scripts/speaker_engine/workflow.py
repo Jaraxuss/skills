@@ -13,7 +13,13 @@ from .constants import MODEL_CONFIG, PIPELINE_CONFIG
 from .embedding import EmbeddingEngine, normalize
 from .matching import build_profile_arrays, calibrate_profiles, match_label
 from .reporting import write_outputs
-from .resolution import resolve_results, validate_context, validate_viewpoints
+from .resolution import (
+    deterministic_named_label_context,
+    ensure_viewpoint_coverage,
+    resolve_results,
+    validate_context,
+    validate_viewpoints,
+)
 from .storage import DataStore
 from .transcript import (
     Candidate,
@@ -188,6 +194,24 @@ def _calibration_for_profiles(
     return payload
 
 
+def _group_enrollment_candidates(
+    resolved_mapping: dict[str, dict[str, Any]],
+    candidates: list[Candidate],
+) -> list[dict[str, Any]]:
+    grouped: dict[str, dict[str, Any]] = {}
+    for label, person in resolved_mapping.items():
+        item = grouped.setdefault(
+            person["person_id"],
+            {"person": person, "labels": [], "candidates": []},
+        )
+        item["labels"].append(label)
+    for candidate in candidates:
+        person = resolved_mapping.get(candidate.label)
+        if person is not None:
+            grouped[person["person_id"]]["candidates"].append(candidate)
+    return list(grouped.values())
+
+
 def enrollment_commit(
     draft_path: Path,
     confirmation_path: Path,
@@ -233,8 +257,10 @@ def enrollment_commit(
         convert_to_wav(audio_path, wav_path, int(PIPELINE_CONFIG["sample_rate"]))
         utterances = parse_transcript(transcript_path, audio_duration(wav_path))
         all_candidates = build_candidates(wav_path, utterances, PIPELINE_CONFIG)
-        for label, person in resolved_mapping.items():
-            candidates = [item for item in all_candidates if item.label == label]
+        for group in _group_enrollment_candidates(resolved_mapping, all_candidates):
+            person = group["person"]
+            labels = group["labels"]
+            candidates = group["candidates"]
             candidates = select_temporally_diverse(
                 candidates,
                 int(PIPELINE_CONFIG["max_enrollment_candidates_per_person"]),
@@ -248,7 +274,7 @@ def enrollment_commit(
                 arrays, profile_stats = build_profile_arrays(candidates, embeddings)
                 prepared.append(
                     {
-                        "label": label,
+                        "labels": labels,
                         "person": person,
                         "arrays": arrays,
                         "profile_stats": profile_stats,
@@ -259,7 +285,7 @@ def enrollment_commit(
             except Exception as exc:
                 skipped.append(
                     {
-                        "label": label,
+                        "labels": labels,
                         "person_id": person["person_id"],
                         "name": person["name"],
                         "reason": str(exc),
@@ -272,7 +298,9 @@ def enrollment_commit(
     for item in prepared:
         person = store.get_person(item["person"]["person_id"])
         if person.get("current_version") is not None:
-            candidate_id = f"cand-{safe_component(enrollment_id)}-{safe_component(item['label'])}"
+            candidate_id = (
+                f"cand-{safe_component(enrollment_id)}-{safe_component(person['person_id'])}"
+            )
             payload = store.save_candidate(
                 customer_id,
                 person["person_id"],
@@ -282,12 +310,14 @@ def enrollment_commit(
                 {
                     "kind": "confirmed_enrollment_for_existing_profile",
                     "predicted_identity": person["name"],
-                    "transcript_label": item["label"],
+                    "transcript_label": item["labels"][0],
+                    "transcript_labels": item["labels"],
                     "usable_seconds": float(
                         sum(candidate.duration for candidate in item["all_candidates"])
                     ),
                     "windows": [candidate.to_dict() for candidate in item["all_candidates"]],
                     "source": draft["source"],
+                    "meeting": manifest["meeting"],
                     "confirmation": {
                         "confirmed_by": confirmed_by,
                         "confirmation_file": str(confirmation_path.resolve()),
@@ -300,7 +330,8 @@ def enrollment_commit(
             "model": _model_manifest(engine),
             "registration": {
                 "enrollment_id": enrollment_id,
-                "source_label": item["label"],
+                "source_label": item["labels"][0],
+                "source_labels": item["labels"],
                 "audio": str(audio_path),
                 "transcript": str(transcript_path),
                 **draft["source"],
@@ -458,9 +489,41 @@ def analyze_acoustic(
         viewpoints_template = run_dir / "viewpoints.template.json"
         atomic_write_json(bundle_path, bundle)
         atomic_write_json(index_path, index)
-        atomic_write_json(context_template, {"schema_version": 1, "items": []})
-        atomic_write_json(viewpoints_template, {"schema_version": 1, "items": []})
+        atomic_write_json(
+            context_template,
+            {
+                "schema_version": 1,
+                "instructions": (
+                    "Extract only transcript-grounded identity evidence. Explicitly named "
+                    "people may be outside the voiceprint cohort; role semantics cannot add one."
+                ),
+                "candidate_people": candidate_people,
+                "items": [],
+            },
+        )
+        atomic_write_json(
+            viewpoints_template,
+            {
+                "schema_version": 1,
+                "instructions": (
+                    "Cover every required label with at least one grounded viewpoint or "
+                    "speech summary. Use non_substantive_labels only for grounded background, "
+                    "incidental speech, or noise. Empty coverage cannot be finalized."
+                ),
+                "required_labels": list(index["labels"]),
+                "items": [],
+                "non_substantive_labels": [],
+            },
+        )
         store.update_run(run_id, "awaiting_semantic_evidence")
+        summaries = [
+            {
+                key: value
+                for key, value in row.items()
+                if key not in {"candidate_windows", "candidate_vector_path", "scores"}
+            }
+            for row in results
+        ]
         return {
             "status": bundle["status"],
             "run_id": run_id,
@@ -469,7 +532,7 @@ def analyze_acoustic(
             "transcript_index": str(index_path),
             "context_template": str(context_template),
             "viewpoints_template": str(viewpoints_template),
-            "results": results,
+            "results": summaries,
         }
     except Exception:
         store.update_run(run_id, "failed")
@@ -485,20 +548,27 @@ def analyze_finalize(
     run_dir = run_dir.resolve()
     bundle = load_structured(run_dir / "acoustic_bundle.json")
     index = load_structured(run_dir / "transcript_index.json")
+    if viewpoints_path is None:
+        raise ValueError(
+            "--viewpoints is required and must cover every transcript label; "
+            "use a grounded background/incidental classification only when appropriate"
+        )
     context_payload = (
         load_structured(context_path.resolve())
         if context_path is not None
         else {"schema_version": 1, "items": []}
     )
-    viewpoints_payload = (
-        load_structured(viewpoints_path.resolve())
-        if viewpoints_path is not None
-        else {"schema_version": 1, "items": []}
-    )
+    viewpoints_payload = load_structured(viewpoints_path.resolve())
     valid_context, rejected_context = validate_context(
         context_payload, index, bundle["candidate_people"]
     )
-    valid_viewpoints, rejected_viewpoints = validate_viewpoints(viewpoints_payload, index)
+    valid_context.extend(
+        deterministic_named_label_context(index, bundle["candidate_people"])
+    )
+    valid_viewpoints, non_substantive_labels, rejected_viewpoints = validate_viewpoints(
+        viewpoints_payload, index
+    )
+    ensure_viewpoint_coverage(index, valid_viewpoints, non_substantive_labels)
     resolved = resolve_results(
         bundle["acoustic_results"], valid_context, bundle["candidate_people"]
     )
@@ -555,12 +625,18 @@ def analyze_finalize(
         valid_context,
         rejected_context,
         valid_viewpoints,
+        non_substantive_labels,
         rejected_viewpoints,
         created_candidates,
     )
     atomic_write_json(run_dir / "validated_context.json", {"schema_version": 1, "items": valid_context})
     atomic_write_json(
-        run_dir / "validated_viewpoints.json", {"schema_version": 1, "items": valid_viewpoints}
+        run_dir / "validated_viewpoints.json",
+        {
+            "schema_version": 1,
+            "items": valid_viewpoints,
+            "non_substantive_labels": non_substantive_labels,
+        },
     )
     store.update_run(run_id, "completed")
     return {
@@ -573,7 +649,9 @@ def analyze_finalize(
                 "candidate_id": item["candidate_id"],
                 "predicted_identity": item["predicted_identity"],
                 "metadata_path": str(
-                    store.customer_dir(customer_id) / "candidates" / f"{item['candidate_id']}.json"
+                    store.resolve_storage_path(
+                        str(item["npz_path"]).replace(".npz", ".json"), customer_id
+                    )
                 ),
             }
             for item in created_candidates
@@ -591,20 +669,23 @@ def list_profile_candidates(customer_id: str, store: DataStore) -> dict[str, Any
 def promote_candidate(
     candidate_path: Path,
     person_id: str,
-    confirmed_by: str,
+    confirmed_by: str | None,
     store: DataStore,
 ) -> dict[str, Any]:
     candidate = load_structured(candidate_path.resolve())
     if candidate.get("status") != "pending_confirmation":
         raise ValueError(f"Candidate is not pending confirmation: {candidate.get('status')}")
-    if not confirmed_by.strip():
+    if confirmed_by is not None and not confirmed_by.strip():
         raise ValueError("confirmed_by is required")
+    confirmed_by = confirmed_by.strip() if confirmed_by else None
     person = store.get_person(person_id)
     customer_id = candidate["customer_id"]
     if person["scope"] == "customer" and person["customer_id"] != customer_id:
         raise RuntimeError("Cross-customer profile promotion was blocked")
     current = store.load_profile(person_id)
-    with np.load(candidate["npz_path"], allow_pickle=False) as arrays:
+    with np.load(
+        store.resolve_storage_path(str(candidate["npz_path"]), customer_id), allow_pickle=False
+    ) as arrays:
         vectors = np.asarray(arrays["embeddings"], dtype=np.float32)
     if vectors.ndim != 2 or vectors.shape[1] != 192 or len(vectors) < 2:
         raise ValueError("Candidate does not contain enough valid embeddings")
@@ -646,9 +727,10 @@ def promote_candidate(
     )[: len(combined_refs)]
     profile_manifest = {
         "model": current["manifest"]["model"],
+        "review_session_id": candidate.get("review_session_id"),
+        "confirmation_mode": candidate.get("confirmation", {}).get("mode", "cli_confirmed"),
         "promotion": {
             "candidate_id": candidate["candidate_id"],
-            "confirmed_by": confirmed_by,
             "confirmed_at": now_iso(),
             "candidate_predicted_identity": candidate["predicted_identity"],
             "median_similarity_to_previous_center": consistency,
@@ -668,6 +750,8 @@ def promote_candidate(
             "holdout_count": len(combined_heldouts),
         },
     }
+    if confirmed_by:
+        profile_manifest["promotion"]["confirmed_by"] = confirmed_by
     saved = store.save_profile(
         person,
         {
@@ -679,10 +763,11 @@ def promote_candidate(
         profile_manifest,
     )
     details = {
-        "confirmed_by": confirmed_by,
         "promoted_person_id": person_id,
         "profile_version": saved["version"],
         "promoted_at": now_iso(),
     }
+    if confirmed_by:
+        details["confirmed_by"] = confirmed_by
     store.mark_candidate(candidate["candidate_id"], "promoted", details)
     return {"status": "promoted", "profile": saved, "candidate": details}

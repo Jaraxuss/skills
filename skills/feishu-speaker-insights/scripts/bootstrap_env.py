@@ -36,6 +36,9 @@ def main() -> None:
     parser.add_argument(
         "--apply", action="store_true", help="Apply changes; otherwise only print commands"
     )
+    parser.add_argument(
+        "--skip-frontend", action="store_true", help="Skip the optional static review-console build"
+    )
     args = parser.parse_args()
     conda = shutil.which("conda")
     if not conda:
@@ -74,9 +77,21 @@ def main() -> None:
         "-r",
         str(lock_file),
     ]
+    frontend_dir = Path(__file__).resolve().parent.parent / "review_app"
+    npm = shutil.which("npm")
+    frontend_commands = (
+        [[npm, "ci"], [npm, "run", "build"]]
+        if npm and frontend_dir.is_dir() and not args.skip_frontend
+        else []
+    )
     print(
         json.dumps(
-            {"conda": conda_command, "common": common_command, "platform": platform_command},
+            {
+                "conda": conda_command,
+                "common": common_command,
+                "platform": platform_command,
+                "frontend": frontend_commands,
+            },
             ensure_ascii=False,
             indent=2,
         )
@@ -85,6 +100,8 @@ def main() -> None:
         subprocess.run(conda_command, check=True)
         subprocess.run(common_command, check=True)
         subprocess.run(platform_command, check=True)
+        for command in frontend_commands:
+            subprocess.run(command, cwd=frontend_dir, check=True)
 
 
 if __name__ == "__main__":

@@ -36,6 +36,19 @@ def data_root() -> Path:
     return xdg / "feishu-speaker-insights"
 
 
+def customers_root() -> Path | None:
+    """Return the configured customer root for the review-console layout.
+
+    ``None`` deliberately preserves the original single-data-root layout.  This
+    lets an existing deployment remain readable until the explicit copy-based
+    migration has completed.
+    """
+    configured = os.environ.get("FEISHU_SPEAKER_CUSTOMERS_ROOT")
+    if not configured:
+        return None
+    return Path(configured).expanduser().resolve()
+
+
 def cache_root() -> Path:
     configured = os.environ.get("FEISHU_SPEAKER_CACHE_DIR")
     if configured:

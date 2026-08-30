@@ -17,14 +17,27 @@ if str(SCRIPTS) not in sys.path:
 
 from speaker_engine.matching import calibrate_profiles
 from speaker_engine.resolution import (
+    deterministic_named_label_context,
+    ensure_viewpoint_coverage,
     resolve_results,
     validate_context,
     validate_viewpoints,
 )
 from speaker_engine.storage import DataStore
-from speaker_engine.transcript import format_timestamp, parse_timestamp, parse_transcript
+from speaker_engine.transcript import (
+    Candidate,
+    build_candidates,
+    format_timestamp,
+    parse_timestamp,
+    parse_transcript,
+)
+from speaker_engine.constants import PIPELINE_CONFIG
 from speaker_engine.util import atomic_save_npz, atomic_write_json
-from speaker_engine.workflow import enrollment_prepare, promote_candidate
+from speaker_engine.workflow import (
+    _group_enrollment_candidates,
+    enrollment_prepare,
+    promote_candidate,
+)
 
 
 def unit(vector: np.ndarray) -> np.ndarray:
@@ -74,7 +87,54 @@ class TranscriptTests(unittest.TestCase):
             )
             rows = parse_transcript(path, 8)
         self.assertEqual([row.label for row in rows], ["客户负责人", "说话人 1"])
-        self.assertEqual(rows[0].end, 4)
+        self.assertLess(rows[0].end, 4)
+        self.assertEqual(rows[0].end_source, "estimated_text_duration")
+
+    def test_start_only_rows_do_not_fill_long_gaps(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "sparse.txt"
+            path.write_text(
+                "说话人 1 00:00\n简短答复\n\n说话人 2 00:40\n下一句\n",
+                encoding="utf-8",
+            )
+            rows = parse_transcript(path, 60)
+        self.assertLessEqual(rows[0].end, 5)
+        self.assertEqual(rows[0].end_source, "estimated_text_duration")
+
+    def test_explicit_range_is_supported_when_available(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "ranged.txt"
+            path.write_text(
+                "[00:01 - 00:04] 客户负责人\n完整句子\n",
+                encoding="utf-8",
+            )
+            rows = parse_transcript(path, 10)
+        self.assertEqual((rows[0].start, rows[0].end), (1, 4))
+        self.assertEqual(rows[0].end_source, "explicit_stop")
+
+    def test_adaptive_vad_keeps_speech_and_rejects_long_silence(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            audio_path = root / "speech.wav"
+            transcript_path = root / "speech.txt"
+            sample_rate = 16000
+            wave = np.zeros(sample_rate * 20, dtype=np.float32)
+            time = np.arange(int(sample_rate * 2.4)) / sample_rate
+            wave[int(sample_rate * 0.3) : int(sample_rate * 2.7)] = (
+                0.08 * np.sin(2 * math.pi * 220 * time)
+            )
+            sf.write(audio_path, wave, sample_rate)
+            transcript_path.write_text(
+                "说话人 1 00:00\n这是一个简短答复\n\n说话人 2 00:18\n嗯\n",
+                encoding="utf-8",
+            )
+            rows = parse_transcript(transcript_path, 20)
+            candidates = build_candidates(audio_path, rows, PIPELINE_CONFIG)
+        first = [item for item in candidates if item.label == "说话人 1"]
+        second = [item for item in candidates if item.label == "说话人 2"]
+        self.assertTrue(first)
+        self.assertLess(max(item.end for item in first), 6)
+        self.assertFalse(second)
 
 
 class StorageTests(unittest.TestCase):
@@ -241,6 +301,79 @@ class CalibrationAndResolutionTests(unittest.TestCase):
         )
         self.assertEqual(evidence[0]["strength"], "weak")
 
+    def test_exact_named_label_generates_strong_context(self) -> None:
+        index = {
+            "utterances": [
+                {"index": 0, "label": "图南", "timestamp": "00:00", "text": "我们开始吧"}
+            ],
+            "labels": {
+                "图南": [
+                    {"index": 0, "label": "图南", "timestamp": "00:00", "text": "我们开始吧"}
+                ]
+            },
+        }
+        evidence = deterministic_named_label_context(
+            index, [{"person_id": "p1", "name": "图南", "role": "CSM"}]
+        )
+        self.assertEqual(len(evidence), 1)
+        self.assertEqual(evidence[0]["strength"], "strong")
+        self.assertEqual(evidence[0]["supported_person_id"], "p1")
+
+    def test_explicit_outside_cohort_identity_can_resolve(self) -> None:
+        index = {
+            "utterances": [
+                {
+                    "index": 0,
+                    "label": "说话人 1",
+                    "timestamp": "00:18",
+                    "text": "我姓吴，叫我吴老师就可以。",
+                }
+            ],
+            "labels": {"说话人 1": []},
+        }
+        evidence, rejected = validate_context(
+            {
+                "items": [
+                    {
+                        "target_label": "说话人 1",
+                        "supported_person": "吴老师",
+                        "strength": "strong",
+                        "type": "self_identification",
+                        "source_label": "说话人 1",
+                        "timestamp": "00:18",
+                        "excerpt": "我姓吴",
+                    }
+                ]
+            },
+            index,
+            [{"person_id": "p1", "name": "已知客户", "role": "老板"}],
+        )
+        self.assertFalse(rejected)
+        acoustic = [
+            {
+                "transcript_label": "说话人 1",
+                "acoustic_status": "unknown",
+                "acoustic_confidence": "低",
+                "matched_person_id": None,
+                "top1_person_id": "p1",
+                "top1_score": 0.41,
+                "top2_person_id": None,
+                "top2_score": None,
+                "score_margin": None,
+                "usable_windows": 3,
+                "usable_seconds": 9,
+                "notes": [],
+            }
+        ]
+        resolved = resolve_results(
+            acoustic,
+            evidence,
+            [{"person_id": "p1", "name": "已知客户", "role": "老板"}],
+        )[0]
+        self.assertEqual(resolved["final_identity"], "吴老师")
+        self.assertEqual(resolved["final_status"], "上下文识别（声纹库外）")
+        self.assertEqual(resolved["top1_person_id"], "p1")
+
     def test_viewpoint_must_match_label_timestamp_and_excerpt(self) -> None:
         index = {
             "utterances": [
@@ -248,7 +381,7 @@ class CalibrationAndResolutionTests(unittest.TestCase):
             ],
             "labels": {"说话人 1": []},
         }
-        valid, rejected = validate_viewpoints(
+        valid, non_substantive, rejected = validate_viewpoints(
             {
                 "items": [
                     {
@@ -270,7 +403,64 @@ class CalibrationAndResolutionTests(unittest.TestCase):
             index,
         )
         self.assertEqual(len(valid), 1)
+        self.assertFalse(non_substantive)
         self.assertEqual(len(rejected), 1)
+        ensure_viewpoint_coverage(index, valid, non_substantive)
+
+    def test_empty_viewpoints_fail_and_grounded_background_is_allowed(self) -> None:
+        index = {
+            "utterances": [
+                {"index": 0, "label": "说话人 4", "timestamp": "00:02", "text": "喂喂"}
+            ],
+            "labels": {"说话人 4": []},
+        }
+        with self.assertRaises(ValueError):
+            ensure_viewpoint_coverage(index, [], [])
+        valid, background, rejected = validate_viewpoints(
+            {
+                "items": [],
+                "non_substantive_labels": [
+                    {
+                        "transcript_label": "说话人 4",
+                        "classification": "background_or_incidental",
+                        "reason": "只有设备试音，没有会议观点。",
+                        "timestamp": "00:02",
+                        "source_excerpt": "喂喂",
+                    }
+                ],
+            },
+            index,
+        )
+        self.assertFalse(valid)
+        self.assertFalse(rejected)
+        ensure_viewpoint_coverage(index, valid, background)
+
+
+class EnrollmentGroupingTests(unittest.TestCase):
+    def test_multiple_labels_for_one_person_are_built_together(self) -> None:
+        person = {"person_id": "p1", "name": "姚总"}
+        candidates = [
+            Candidate(
+                label=label,
+                utterance_index=index,
+                start=float(index * 3),
+                end=float(index * 3 + 2),
+                timestamp=f"00:0{index}",
+                text="测试",
+                duration=2,
+                rms_dbfs=-20,
+                voiced_fraction=0.9,
+                clipping_ratio=0,
+                quality=0.9,
+            )
+            for index, label in enumerate(["说话人 1", "说话人 2"])
+        ]
+        grouped = _group_enrollment_candidates(
+            {"说话人 1": person, "说话人 2": person}, candidates
+        )
+        self.assertEqual(len(grouped), 1)
+        self.assertEqual(grouped[0]["labels"], ["说话人 1", "说话人 2"])
+        self.assertEqual(len(grouped[0]["candidates"]), 2)
 
 
 class EnrollmentGuardTests(unittest.TestCase):
