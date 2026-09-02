@@ -25,6 +25,7 @@ from speaker_engine.review import (
     normalize_review_manifest,
     prepare_review_session,
     restart_cancelled_enrollment_review,
+    retry_failed_review_session,
     save_review_decision,
     commit_review_session,
     validate_review_decision,
@@ -356,6 +357,43 @@ class ReviewFixture(unittest.TestCase):
         self.assertEqual(self.store.get_review_session(created["session_id"])["status"], "cancelled")
         self.assertEqual(self.store.get_review_session(restarted["session_id"])["status"], "queued")
 
+    def test_failed_commit_can_resume_same_review_with_decision_intact(self) -> None:
+        session_id = self.make_review_session()
+        decision = {
+            "assignments": {f"seg-{index}": self.person["person_id"] for index in range(6)},
+            "new_people": [],
+        }
+        saved = save_review_decision(session_id, decision, 0, self.store)
+        self.store.set_review_session(
+            session_id,
+            status="failed",
+            error_message="IndexError: list index out of range",
+            event_type="review_commit_failed",
+        )
+        recovered = retry_failed_review_session(
+            session_id, saved["revision"], self.store, actor="测试用户"
+        )
+        self.assertEqual(recovered["session_id"], session_id)
+        self.assertEqual(recovered["status"], "review_required")
+        self.assertEqual(recovered["revision"], saved["revision"] + 1)
+        self.assertEqual(recovered["decision"], decision)
+        self.assertEqual(recovered["error_message"], "")
+        # Repeated clicks are idempotent and do not advance the revision again.
+        repeated = retry_failed_review_session(
+            session_id, saved["revision"], self.store, actor="测试用户"
+        )
+        self.assertEqual(repeated["revision"], recovered["revision"])
+
+    def test_failed_prepare_without_review_package_cannot_resume_editing(self) -> None:
+        manifest_path = self.root / "failed-prepare-manifest.json"
+        atomic_write_json(manifest_path, self.raw_manifest)
+        created = create_enrollment_review(manifest_path, self.store)
+        self.store.set_review_session(
+            created["session_id"], status="failed", error_message="准备失败"
+        )
+        with self.assertRaisesRegex(RuntimeError, "审核包生成前失败"):
+            retry_failed_review_session(created["session_id"], 0, self.store)
+
     def test_prepare_embeds_bounded_sample_and_expands_mixed_label(self) -> None:
         manifest_path = self.root / "manifest.json"
         atomic_write_json(manifest_path, self.raw_manifest)
@@ -539,8 +577,9 @@ class ReviewFixture(unittest.TestCase):
         with TestClient(create_app(self.store, base_url="http://testserver")) as client:
             response = client.get("/api/v1/customers/customer-a/files")
         self.assertEqual(response.status_code, 200)
-        paths = [Path(item["path"]).resolve() for item in response.json()["files"]]
-        self.assertEqual(paths.count(source.resolve()), 1)
+        paths = [item["path"] for item in response.json()["files"]]
+        self.assertEqual(paths.count("会议素材/唯一录音.ogg"), 1)
+        self.assertNotIn(str(self.customer_root), response.text)
 
     def test_api_cancels_running_review_session(self) -> None:
         manifest_path = self.root / "manifest.json"
@@ -581,6 +620,35 @@ class ReviewFixture(unittest.TestCase):
         self.assertEqual(response.json()["restarted_from"], created["session_id"])
         self.assertEqual(response.json()["status"], "queued")
 
+    def test_api_retries_failed_commit_into_original_editor(self) -> None:
+        session_id = self.make_review_session()
+        decision = {
+            "assignments": {f"seg-{index}": self.person["person_id"] for index in range(6)},
+            "new_people": [],
+        }
+        saved = save_review_decision(session_id, decision, 0, self.store)
+        self.store.set_review_session(
+            session_id, status="failed", error_message="提交失败"
+        )
+        self.store.finish_review_job(f"job-{session_id}", "failed", error="提交失败")
+        from fastapi.testclient import TestClient
+
+        with TestClient(create_app(self.store, base_url="http://testserver")) as client:
+            before = client.get(f"/api/v1/enrollment-sessions/{session_id}").json()
+            self.assertTrue(before["can_retry_edit"])
+            csrf = client.get("/api/v1/csrf").json()["token"]
+            response = client.post(
+                f"/api/v1/enrollment-sessions/{session_id}/retry-edit",
+                headers={"X-CSRF-Token": csrf},
+                json={"revision": saved["revision"]},
+            )
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        self.assertEqual(payload["session_id"], session_id)
+        self.assertEqual(payload["status"], "review_required")
+        self.assertEqual(payload["decision"], decision)
+        self.assertIn("package", payload)
+
     def test_transcript_preview_is_bounded_and_cannot_escape_customer_directory(self) -> None:
         source_dir = self.customer_root / "客户甲" / "会议素材"
         source_dir.mkdir(parents=True)
@@ -594,7 +662,7 @@ class ReviewFixture(unittest.TestCase):
         with TestClient(create_app(self.store, base_url="http://testserver")) as client:
             response = client.get(
                 "/api/v1/customers/customer-a/transcript-preview",
-                params={"path": str(source)},
+                params={"path": "会议素材/会议.txt"},
             )
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json()["relative_path"], "会议素材/会议.txt")
@@ -620,7 +688,7 @@ class ReviewFixture(unittest.TestCase):
             response = client.post(
                 "/api/v1/customers/customer-a/transcript-speakers",
                 headers={"X-CSRF-Token": csrf},
-                json={"paths": [str(first), str(second)]},
+                json={"paths": ["会议素材/第一场.txt", "会议素材/第二场.txt"]},
             )
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json()["labels"], ["说话人 1", "说话人 2", "说话人 3"])

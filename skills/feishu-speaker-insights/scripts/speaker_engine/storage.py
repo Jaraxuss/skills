@@ -183,6 +183,10 @@ class DataStore:
                     heartbeat_at TEXT,
                     error_code TEXT,
                     error_details_json TEXT,
+                    progress_json TEXT,
+                    cancel_requested_at TEXT,
+                    attempt_count INTEGER NOT NULL DEFAULT 0,
+                    last_started_at TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     completed_at TEXT,
@@ -203,6 +207,10 @@ class DataStore:
             self._add_column(db, "profile_versions", "parent_version INTEGER")
             self._add_column(db, "profile_versions", "creation_mode TEXT")
             self._add_column(db, "people", "voiceprint_enabled INTEGER NOT NULL DEFAULT 1")
+            self._add_column(db, "task_executions", "progress_json TEXT")
+            self._add_column(db, "task_executions", "cancel_requested_at TEXT")
+            self._add_column(db, "task_executions", "attempt_count INTEGER NOT NULL DEFAULT 0")
+            self._add_column(db, "task_executions", "last_started_at TEXT")
         with np.errstate(all="ignore"):
             try:
                 os.chmod(self.db_path, 0o600)
@@ -699,7 +707,20 @@ class DataStore:
                         (person["person_id"],),
                     ).fetchone()[0]
                 )
-            next_version = int(version) if version is not None else highest + 1
+            # A failed commit can leave an immutable profile file on disk even
+            # when its registry insert did not finish.  Never overwrite or
+            # collide with such evidence; allocate after both the registry and
+            # all well-formed version filenames already present on disk.
+            disk_highest = 0
+            for candidate in profile_dir.iterdir():
+                stem = candidate.stem
+                if len(stem) == 5 and stem.startswith("v") and stem[1:].isdigit():
+                    disk_highest = max(disk_highest, int(stem[1:]))
+            next_version = (
+                int(version)
+                if version is not None
+                else max(highest, disk_highest) + 1
+            )
             npz_path = profile_dir / f"v{next_version:04d}.npz"
             manifest_path = profile_dir / f"v{next_version:04d}.json"
             if npz_path.exists() or manifest_path.exists():
@@ -863,6 +884,7 @@ class DataStore:
         for source, target in (
             ("checkpoint_json", "checkpoint"),
             ("error_details_json", "error_details"),
+            ("progress_json", "progress"),
         ):
             raw = value.pop(source, None)
             try:
@@ -895,6 +917,20 @@ class DataStore:
             ).fetchone()
         return self.get_task(str(row["task_id"])) if row is not None else None
 
+    def find_task_by_external_request(
+        self, operation: str, customer_id: str, external_request_id: str
+    ) -> dict[str, Any] | None:
+        with self.connect() as db:
+            row = db.execute(
+                """
+                SELECT task_id FROM task_executions
+                WHERE operation = ? AND customer_id = ? AND external_request_id = ?
+                ORDER BY created_at DESC LIMIT 1
+                """,
+                (operation, customer_id, external_request_id),
+            ).fetchone()
+        return self.get_task(str(row["task_id"])) if row is not None else None
+
     def create_or_reuse_task(
         self,
         *,
@@ -910,6 +946,12 @@ class DataStore:
         existing = self.find_task_by_request_hash(request_hash)
         if existing is not None:
             return existing, True
+        if external_request_id:
+            external = self.find_task_by_external_request(
+                operation, customer_id, external_request_id
+            )
+            if external is not None and external["request_hash"] != request_hash:
+                raise RuntimeError("external_request_conflict")
         artifact_dir = self.task_dir(customer_id, task_id)
         now = now_iso()
         try:
@@ -956,6 +998,10 @@ class DataStore:
         semantic_hash: str | None = None,
         error_code: str | None = None,
         error_details: dict[str, Any] | None = None,
+        progress: dict[str, Any] | None = None,
+        clear_progress: bool = False,
+        clear_cancel: bool = False,
+        increment_attempt: bool = False,
         completed: bool = False,
     ) -> dict[str, Any]:
         task = self.get_task(task_id)
@@ -974,7 +1020,17 @@ class DataStore:
             fields["error_code"] = error_code
         if error_details is not None:
             fields["error_details_json"] = json.dumps(error_details, ensure_ascii=False)
+        if progress is not None:
+            fields["progress_json"] = json.dumps(progress, ensure_ascii=False)
+        elif clear_progress:
+            fields["progress_json"] = None
+        if clear_cancel:
+            fields["cancel_requested_at"] = None
+        if increment_attempt:
+            fields["attempt_count"] = int(task.get("attempt_count") or 0) + 1
+            fields["last_started_at"] = now_iso()
         if status in {
+            "queued",
             "awaiting_semantic",
             "waiting_worker",
             "waiting_confirmation",
@@ -987,6 +1043,7 @@ class DataStore:
         if completed:
             fields["completed_at"] = now_iso()
         if error_code is None and error_details is None and status in {
+            "queued",
             "running",
             "awaiting_semantic",
             "waiting_worker",
@@ -1002,6 +1059,133 @@ class DataStore:
                 (*fields.values(), task_id),
             )
         return self.get_task(task_id)
+
+    def update_task_progress(self, task_id: str, progress: dict[str, Any]) -> None:
+        with self.connect() as db:
+            db.execute(
+                """
+                UPDATE task_executions SET progress_json = ?, updated_at = ?
+                WHERE task_id = ? AND status = 'running'
+                """,
+                (json.dumps(progress, ensure_ascii=False), now_iso(), task_id),
+            )
+
+    def next_queued_task(self, *, finalize_only: bool = False) -> dict[str, Any] | None:
+        query = "SELECT task_id FROM task_executions WHERE status = 'queued'"
+        parameters: tuple[Any, ...] = ()
+        if finalize_only:
+            query += " AND phase = ?"
+            parameters = ("queued_finalize",)
+        query += (
+            " ORDER BY CASE phase WHEN 'queued_finalize' THEN 0 "
+            "WHEN 'queued_enrollment' THEN 1 ELSE 2 END, created_at LIMIT 1"
+        )
+        with self.connect() as db:
+            row = db.execute(query, parameters).fetchone()
+        return self.get_task(str(row["task_id"])) if row is not None else None
+
+    def request_task_cancel(self, task_id: str) -> dict[str, Any]:
+        task = self.get_task(task_id)
+        if task["status"] in {"completed", "cancelled"}:
+            return task
+        now = now_iso()
+        fields = {"cancel_requested_at": now, "updated_at": now}
+        if task["status"] != "running":
+            fields.update(
+                {
+                    "status": "cancelled",
+                    "phase": "cancelled",
+                    "lease_owner": None,
+                    "lease_expires_at": None,
+                }
+            )
+        assignments = ", ".join(f"{key} = ?" for key in fields)
+        with self.connect() as db:
+            db.execute(
+                f"UPDATE task_executions SET {assignments} WHERE task_id = ?",
+                (*fields.values(), task_id),
+            )
+        return self.get_task(task_id)
+
+    def task_cancel_requested(self, task_id: str) -> bool:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT cancel_requested_at, status FROM task_executions WHERE task_id = ?",
+                (task_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(task_id)
+        return bool(row["cancel_requested_at"] or row["status"] == "cancelled")
+
+    def retry_task(self, task_id: str) -> dict[str, Any]:
+        task = self.get_task(task_id)
+        if task["status"] not in {"failed", "cancelled"}:
+            raise RuntimeError("task_not_retryable")
+        checkpoint = task.get("checkpoint") or {}
+        if task["operation"] == "analyze" and checkpoint.get("acoustic"):
+            if checkpoint.get("semantic_response"):
+                phase = "queued_finalize"
+            else:
+                phase = "awaiting_semantic"
+        else:
+            phase = "queued_enrollment" if task["operation"] == "enroll" else "queued_acoustic"
+        status = "awaiting_semantic" if phase == "awaiting_semantic" else "queued"
+        with self.connect() as db:
+            db.execute(
+                """
+                UPDATE task_executions
+                SET status = ?, phase = ?, error_code = NULL, error_details_json = NULL,
+                    progress_json = NULL, cancel_requested_at = NULL, lease_owner = NULL,
+                    lease_expires_at = NULL, updated_at = ?
+                WHERE task_id = ?
+                """,
+                (status, phase, now_iso(), task_id),
+            )
+        return self.get_task(task_id)
+
+    def recover_expired_tasks(self, *, force: bool = False) -> list[str]:
+        """Release stale task leases and restore the last durable phase.
+
+        The single-worker service uses ``force`` during process startup because
+        any lease owner from the previous process can no longer be alive.
+        """
+        now = datetime.now(timezone.utc)
+        recovered: list[str] = []
+        with self.connect() as db:
+            rows = db.execute(
+                "SELECT * FROM task_executions WHERE status = 'running'"
+            ).fetchall()
+            for row in rows:
+                expires_at = row["lease_expires_at"]
+                active = False
+                if expires_at:
+                    with np.errstate(all="ignore"):
+                        try:
+                            active = datetime.fromisoformat(
+                                str(expires_at).replace("Z", "+00:00")
+                            ) > now
+                        except ValueError:
+                            active = False
+                if active and not force:
+                    continue
+                checkpoint = json.loads(row["checkpoint_json"] or "{}")
+                operation = str(row["operation"])
+                if operation == "analyze" and checkpoint.get("acoustic"):
+                    phase = "queued_finalize" if checkpoint.get("semantic_response") else "awaiting_semantic"
+                else:
+                    phase = "queued_enrollment" if operation == "enroll" else "queued_acoustic"
+                status = "awaiting_semantic" if phase == "awaiting_semantic" else "queued"
+                db.execute(
+                    """
+                    UPDATE task_executions
+                    SET status = ?, phase = ?, lease_owner = NULL, lease_expires_at = NULL,
+                        error_code = NULL, error_details_json = NULL, updated_at = ?
+                    WHERE task_id = ?
+                    """,
+                    (status, phase, now_iso(), row["task_id"]),
+                )
+                recovered.append(str(row["task_id"]))
+        return recovered
 
     def claim_task(self, task_id: str, owner: str, lease_seconds: int = 900) -> dict[str, Any]:
         """Acquire or renew a task lease so retries cannot run duplicate workers."""
@@ -1029,10 +1213,18 @@ class DataStore:
                 """
                 UPDATE task_executions
                 SET lease_owner = ?, lease_expires_at = ?, heartbeat_at = ?,
-                    status = 'running', updated_at = ?
+                    status = 'running', attempt_count = attempt_count + 1,
+                    last_started_at = ?, updated_at = ?
                 WHERE task_id = ?
                 """,
-                (owner, expires.isoformat(), now.isoformat(), now.isoformat(), task_id),
+                (
+                    owner,
+                    expires.isoformat(),
+                    now.isoformat(),
+                    now.isoformat(),
+                    now.isoformat(),
+                    task_id,
+                ),
             )
             db.commit()
         return self.get_task(task_id)
@@ -1692,6 +1884,7 @@ class DataStore:
         reviewed_by: str | None = None,
         decision: dict[str, Any] | None = None,
         expected_revision: int | None = None,
+        bump_revision: bool = False,
         actor: str | None = None,
         client: dict[str, Any] | None = None,
         event_type: str = "review_session_updated",
@@ -1718,6 +1911,8 @@ class DataStore:
                 fields["reviewed_by"] = reviewed_by
             if decision is not None:
                 fields["decision_json"] = json.dumps(decision, ensure_ascii=False)
+                fields["revision"] = int(before["revision"]) + 1
+            elif bump_revision:
                 fields["revision"] = int(before["revision"]) + 1
             assignments = ", ".join(f"{key} = ?" for key in fields)
             db.execute(
@@ -1765,6 +1960,13 @@ class DataStore:
             raise
         finally:
             db.close()
+
+    def has_queued_review_job(self) -> bool:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT 1 FROM review_jobs WHERE status = 'queued' LIMIT 1"
+            ).fetchone()
+        return row is not None
 
     def claim_review_job_for_session(self, session_id: str) -> dict[str, Any] | None:
         """Atomically claim the preparation job belonging to one known session."""

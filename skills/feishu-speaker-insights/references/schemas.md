@@ -1,10 +1,31 @@
-# 数据格式与命令流程
+# 数据格式与语义结果
 
-Read this reference when creating a customer, enrolling profiles, analyzing a meeting, or generating semantic JSON.
+创建客户、建立声纹、识别新会议或生成语义 JSON 时阅读本文。
 
-## 会议清单
+## 业务 API 请求
 
-YAML and JSON are accepted. Paths must be absolute.
+OpenClaw 和业务 CLI 只向后端提交客户 ID、客户目录内相对路径和业务字段，不读取客户根目录、SQLite 或声纹文件。完整接口见 [API 参考](api.md)。例如后续识别请求：
+
+```json
+{
+  "schema_version": 1,
+  "external_request_id": "openclaw-message-id",
+  "customer_id": "example-customer",
+  "meeting": {
+    "audio_relpath": "录音/meeting.ogg",
+    "transcript_relpath": "录音/meeting.txt"
+  },
+  "attendees": [],
+  "known_label_map": {},
+  "excluded_labels": []
+}
+```
+
+业务 API 禁止绝对路径、`..`、软链接逃逸和读取客户的“声纹数据”目录。
+
+## 管理员离线会议清单
+
+以下格式仅供迁移、修复和隔离的离线测试使用，接受 YAML 或 JSON，路径必须为绝对路径。OpenClaw 和网页不得使用此格式直连业务引擎。
 
 ```yaml
 schema_version: 1
@@ -51,18 +72,11 @@ excluded_labels:
 
 ## Agent 建库与分析（OpenClaw 默认）
 
-首次建库使用 `agent enroll-start` 与 `agent enroll-confirm`；后续录音使用 `agent analyze-start` 与 `agent analyze-complete`。用户不输入技术任务 ID，OpenClaw 从首次命令结果中保存并在后续内部调用时传回。请求、确认绑定、幂等恢复和固定飞书消息格式见 [Agent 工作流](agent-workflows.md)。
+OpenClaw 优先直接调用 HTTP API；不具备 HTTP 能力时，使用 `agent` 下的薄 CLI。首次建库使用 `enroll-start` 与 `enroll-confirm`，后续录音使用 `analyze-start`、`semantic-request`、`analyze-complete` 和 `report`。用户不输入技术任务 ID，OpenClaw 只在内部保存并传回。请求、确认绑定、幂等恢复和固定飞书消息格式见 [Agent 工作流](agent-workflows.md)。
 
 ## 浏览器建库审核（复杂任务）
 
-多人员、超过三组候选、红色风险或需要逐片段处理的任务使用审核台。也可以由用户主动指定网页审核。使用同一清单创建会话：
-
-```text
-speaker_insights.py --customers-root /path/to/客户 enroll review-create \
-  --manifest MEETING.yaml --base-url http://HOST:8765
-```
-
-It returns `session_id`, `queued`, and `review_url`. The Worker stores its temporary artifacts at:
+多人员、超过三组候选、红色风险或需要逐片段处理的任务使用审核台。网页直接调用后端 API；OpenClaw 创建简单建库任务后，后端也会在不满足快速确认条件时返回 `review_mode=web_full` 和审核链接。Worker 的临时产物存放在：
 
 网页入口不需要用户填写 `meeting.id` 或 `meeting.title`：它从录音文件名派生这两个值，并允许一个首次建库会话包含多组录音和转写。参会人字段填写真人信息，不要求与转写标签同名；标签归属由审核台中的片段分配决定。网页中的“我方”在清单中使用 `organization: yingdao`，其声纹存入全局员工库；“客户”则只存入当前客户。审核台不要求填写确认人，点击“确认建库”即为正式授权。CLI 清单接口仍保持上方的单场会议结构。
 
@@ -75,7 +89,7 @@ It returns `session_id`, `queued`, and `review_url`. The Worker stores its tempo
 └── commit_journal.json
 ```
 
-`pending_vectors.npz` is not a profile and is removed after cancellation, expiration, or successful commit. The browser decision contains a server revision and assignments from `segment_id` to a person ID, `unknown`, `background`, or `skip`. It may contain `new_people`, with name and role. The server is the only component that turns selected windows into `vNNNN`.
+`pending_vectors.npz` 不是正式声纹，会在取消、过期或成功提交后清理。浏览器决策包含服务端修订号，以及从 `segment_id` 到人员 ID、`unknown`、`background` 或 `skip` 的分配，也可以包含姓名与职位组成的 `new_people`。只有后端可以把选中窗口写成正式 `vNNNN`。
 
 ## 上下文证据
 
@@ -143,7 +157,7 @@ Write viewpoints by original transcript label. Finalization groups labels only a
 }
 ```
 
-`analyze finalize` 会拒绝缺失标签。不能把空模板原样提交。
+后端定稿阶段会拒绝缺失标签，不能把空模板原样提交。
 
 ## 只有开始时间的转写
 
@@ -156,37 +170,31 @@ speaker_insights.py paths
 speaker_insights.py doctor [--download]
 speaker_insights.py capabilities
 
-# OpenClaw / Agent 稳定接口
-speaker_insights.py agent enroll-start --request REQUEST.json [--base-url URL]
-speaker_insights.py agent enroll-confirm --request CONFIRMATION.json
-speaker_insights.py agent analyze-start --request REQUEST.json
+# OpenClaw / Agent HTTP 薄客户端；API 地址来自 --api-url、环境变量或本机默认值
+speaker_insights.py agent enroll-start --request REQUEST.json [--api-url URL]
+speaker_insights.py agent enroll-confirm --request CONFIRMATION.json [--api-url URL]
+speaker_insights.py agent analyze-start --request REQUEST.json [--api-url URL]
+speaker_insights.py agent semantic-request --task TASK_ID [--output semantic.json]
 speaker_insights.py agent analyze-complete --task TASK_ID --semantic-response SEMANTIC.json
 speaker_insights.py agent task-status --task TASK_ID
+speaker_insights.py agent report --task TASK_ID --format feishu|json|markdown [--output PATH]
+speaker_insights.py agent task-cancel --task TASK_ID
+speaker_insights.py agent task-retry --task TASK_ID
 speaker_insights.py agent analysis-correct --task TASK_ID --corrections CORRECTIONS.json
 
-# 兼容及管理员接口
-speaker_insights.py customer upsert --manifest MEETING.yaml
-speaker_insights.py enroll prepare --manifest MEETING.yaml
-speaker_insights.py enroll commit --draft enrollment_draft.json --confirmation confirmation.yaml
-speaker_insights.py analyze acoustic --manifest MEETING.yaml
-speaker_insights.py analyze finalize --run-dir RUN_DIR --context context.json --viewpoints viewpoints.json
-speaker_insights.py profile candidates --customer CUSTOMER_ID
-speaker_insights.py profile promote --candidate CANDIDATE_JSON --person PERSON_ID --confirmed-by NAME
-speaker_insights.py profile versions --person PERSON_ID
-speaker_insights.py profile set-current --person PERSON_ID --version 1
-speaker_insights.py profile disable --person PERSON_ID
-speaker_insights.py profile enable --person PERSON_ID
-speaker_insights.py profile fork --person PERSON_ID --base-version 1 [--window-ids retained.json] [--keep-current]
-speaker_insights.py profile revision-review-create --person PERSON_ID --base-version 1 [--base-url URL]
-speaker_insights.py enroll review-create --manifest MEETING.yaml [--base-url URL]
-speaker_insights.py enroll review-status --session SESSION_ID
-speaker_insights.py enroll review-cancel --session SESSION_ID
-speaker_insights.py profile review-create --candidate CANDIDATE.json [--base-url URL]
+# 后端与管理员接口
 speaker_insights.py review serve --host 127.0.0.1 --port 8765 --base-url http://127.0.0.1:8765
+speaker_insights.py doctor [--download]
+speaker_insights.py paths
+speaker_insights.py capabilities
+speaker_insights.py admin db-check
+speaker_insights.py admin repair
+speaker_insights.py admin task-inspect --task TASK_ID
+speaker_insights.py --data-dir TEMP offline test --manifest MEETING.yaml --viewpoints viewpoints.json
 speaker_insights.py migrate layout --from-data-dir OLD --customers-root NEW --dry-run
 speaker_insights.py migrate layout --from-data-dir OLD --customers-root NEW --apply
 ```
 
-旧的 `profile rollback` 和 `profile quarantine` 仅保留为兼容入口；新流程使用“设为当前版本”和“停用”，不会删除历史版本或清空当前版本指针。
+旧的本地 `customer`、`enroll`、`analyze`、`profile` 和 `review work-once` 命令仅供兼容与维护，不得由 OpenClaw 调用。正常业务统一通过 API；版本管理和审核由网页调用 API 完成。
 
-命令最终输出单个包含产物路径的 JSON 对象，Agent 不需要从终端自然语言中猜测结果。
+薄 CLI 最终只输出单个机器可读 JSON；不会初始化 `DataStore`，也不会在后端不可用时回退到本地执行。

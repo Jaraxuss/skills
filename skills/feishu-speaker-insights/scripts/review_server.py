@@ -23,10 +23,28 @@ from speaker_engine.review import (
     create_profile_revision_review,
     create_profile_review,
     normalize_review_manifest,
+    failed_review_retry_eligibility,
     restart_cancelled_enrollment_review,
+    retry_failed_review_session,
     run_next_review_job,
     save_review_decision,
     validate_review_decision,
+)
+from speaker_engine.errors import StructuredError
+from speaker_engine.maintenance import service_runtime_lock
+from speaker_engine.service import (
+    ServiceWorker,
+    apply_corrections,
+    audition_path,
+    confirm_enrollment,
+    enqueue_analysis,
+    enqueue_enrollment,
+    public_report_payload,
+    report_paths,
+    semantic_request_payload,
+    service_capabilities,
+    submit_semantic_result,
+    task_payload,
 )
 from speaker_engine.storage import DataStore
 from speaker_engine.util import atomic_write_json, load_structured
@@ -34,7 +52,7 @@ from speaker_engine.util import atomic_write_json, load_structured
 
 LOG = logging.getLogger("feishu_speaker_review")
 AUDIO_SUFFIXES = {".ogg", ".opus", ".wav", ".mp3", ".m4a", ".aac", ".flac"}
-TRANSCRIPT_SUFFIXES = {".txt", ".json", ".yaml", ".yml"}
+TRANSCRIPT_SUFFIXES = {".txt", ".md", ".json", ".yaml", ".yml"}
 SPEAKER_LABEL_PATTERN = re.compile(
     r"^\s*(说话人\s*\d+)\s+(?:(?:\d{1,2}:)?\d{1,2}:\d{2})(?=\s|$)",
     re.MULTILINE,
@@ -67,8 +85,11 @@ def _api_error(exc: Exception) -> HTTPException:
 
 
 def _safe_customer_file(store: DataStore, customer_id: str, raw_path: str, suffixes: set[str]) -> Path:
-    candidate = Path(raw_path).expanduser().resolve()
     customer_root = store.customer_source_dir(customer_id).resolve()
+    supplied = Path(raw_path).expanduser()
+    # New browser clients submit only customer-relative paths.  Keep accepting
+    # an absolute path from an older open page, but always re-validate it below.
+    candidate = supplied.resolve() if supplied.is_absolute() else (customer_root / supplied).resolve()
     # The customer may keep recordings in its customer directory, while the
     # protected ``声纹数据`` subtree must never be selected as input.
     customer_data = customer_root / "声纹数据"
@@ -106,6 +127,10 @@ def _session_payload(store: DataStore, session_id: str, include_package: bool = 
     result = {key: value for key, value in session.items() if key not in {"manifest_path", "package_path", "result_path"}}
     result.update(_session_summary(store, session))
     result["playback_count"] = store.audit_count(session_id, "review_segment_played")
+    can_retry_edit, retry_edit_reason = failed_review_retry_eligibility(session)
+    result["can_retry_edit"] = can_retry_edit
+    if retry_edit_reason:
+        result["retry_edit_reason"] = retry_edit_reason
     if include_package and session.get("package_path") and Path(session["package_path"]).is_file():
         package = load_structured(Path(session["package_path"]))
         # The browser needs timestamps/transcript text but never an arbitrary
@@ -158,21 +183,29 @@ def _audio_stream(command: list[str]) -> Iterator[bytes]:
 
 
 def create_app(store: DataStore, *, base_url: str, download: bool = False) -> FastAPI:
+    service_worker = ServiceWorker(
+        store,
+        base_url=base_url,
+        download=download,
+    )
+
     def worker_loop() -> None:
         while not app.state.stop_event.is_set():
             try:
-                result = run_next_review_job(store, download=download)
-                cleanup_review_artifacts(store)
+                result = service_worker.run_once()
                 if result:
-                    LOG.info("review job processed: %s (%s)", result["session_id"], result["status"])
+                    LOG.info("service job processed: %s", result)
             except Exception:
-                LOG.exception("review worker failed")
+                LOG.exception("speaker service worker failed")
             app.state.stop_event.wait(0.8)
 
     @contextlib.asynccontextmanager
     async def lifespan(_: FastAPI):
         app.state.stop_event = threading.Event()
-        thread = threading.Thread(target=worker_loop, name="speaker-review-worker", daemon=True)
+        recovered = store.recover_expired_tasks(force=True)
+        if recovered:
+            LOG.warning("recovered expired tasks: %s", ", ".join(recovered))
+        thread = threading.Thread(target=worker_loop, name="speaker-service-worker", daemon=True)
         app.state.worker_thread = thread
         thread.start()
         try:
@@ -185,6 +218,28 @@ def create_app(store: DataStore, *, base_url: str, download: bool = False) -> Fa
     app.state.store = store
     app.state.base_url = base_url.rstrip("/")
     app.state.download = download
+    app.state.service_worker = service_worker
+
+    @app.exception_handler(StructuredError)
+    async def structured_error_handler(_: Request, exc: StructuredError) -> JSONResponse:
+        if exc.code.endswith("NOT_FOUND") or exc.code in {"CUSTOMER_NOT_FOUND"}:
+            status_code = 404
+        elif "CONFLICT" in exc.code or exc.code in {
+            "TASK_ALREADY_COMPLETED",
+            "TASK_STATE_CONFLICT",
+        }:
+            status_code = 409
+        elif exc.code in {
+            "MISSING_VIEWPOINT_LABELS",
+            "VIEWPOINTS_REQUIRED",
+            "SEMANTIC_REQUEST_NOT_READY",
+            "REPORT_NOT_READY",
+            "AUDITION_NOT_READY",
+        }:
+            status_code = 422
+        else:
+            status_code = 400
+        return JSONResponse(status_code=status_code, content=exc.to_dict())
 
     @app.get("/api/v1/csrf")
     def csrf(response: Response) -> dict[str, str]:
@@ -194,7 +249,152 @@ def create_app(store: DataStore, *, base_url: str, download: bool = False) -> Fa
 
     @app.get("/api/v1/customers")
     def customers() -> dict[str, Any]:
-        return {"customers": store.discover_customers()}
+        return {
+            "customers": [
+                {
+                    "customer_id": str(item["customer_id"]),
+                    "name": str(item["name"]),
+                    "registered": bool(item.get("registered", True)),
+                }
+                for item in store.discover_customers()
+            ]
+        }
+
+    @app.get("/api/v1/capabilities")
+    def machine_capabilities() -> dict[str, Any]:
+        return service_capabilities()
+
+    async def machine_json(request: Request) -> dict[str, Any]:
+        content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+        if content_type != "application/json":
+            raise StructuredError(
+                "JSON_REQUIRED",
+                "机器业务接口只接受 application/json。",
+            )
+        payload = await request.json()
+        if not isinstance(payload, dict):
+            raise StructuredError("INVALID_REQUEST", "请求正文必须是 JSON 对象。")
+        return payload
+
+    def require_operation(task_id: str, operation: str) -> dict[str, Any]:
+        try:
+            task = store.get_task(task_id)
+        except KeyError as exc:
+            raise StructuredError("TASK_NOT_FOUND", f"任务不存在：{task_id}") from exc
+        if task["operation"] != operation:
+            raise StructuredError("TASK_TYPE_MISMATCH", "任务类型与接口不匹配。")
+        return task
+
+    @app.post("/api/v1/analysis-tasks", status_code=202)
+    async def create_analysis_task(request: Request) -> dict[str, Any]:
+        task, reused = enqueue_analysis(await machine_json(request), store)
+        return task_payload(task["task_id"], store, app.state.base_url, reused=reused)
+
+    @app.get("/api/v1/analysis-tasks/{task_id}")
+    def analysis_task_status(task_id: str) -> dict[str, Any]:
+        require_operation(task_id, "analyze")
+        return task_payload(task_id, store, app.state.base_url, reused=True)
+
+    @app.get("/api/v1/analysis-tasks/{task_id}/semantic-request")
+    def analysis_semantic_request(task_id: str) -> dict[str, Any]:
+        require_operation(task_id, "analyze")
+        return semantic_request_payload(task_id, store)
+
+    @app.post("/api/v1/analysis-tasks/{task_id}/semantic-result", status_code=202)
+    async def analysis_semantic_result(task_id: str, request: Request) -> dict[str, Any]:
+        require_operation(task_id, "analyze")
+        task, reused = submit_semantic_result(task_id, await machine_json(request), store)
+        return task_payload(task["task_id"], store, app.state.base_url, reused=reused)
+
+    @app.get("/api/v1/analysis-tasks/{task_id}/report")
+    def analysis_report(task_id: str, format: str = "feishu") -> Response:
+        require_operation(task_id, "analyze")
+        if format not in {"feishu", "json", "markdown"}:
+            raise StructuredError("INVALID_REPORT_FORMAT", "format 必须是 feishu、json 或 markdown。")
+        paths = report_paths(task_id, store)
+        path = paths.get(format)
+        if path is None:
+            raise StructuredError("REPORT_FORMAT_NOT_READY", f"{format} 报告尚未生成。", retryable=True)
+        if format in {"feishu", "json"}:
+            return JSONResponse(
+                content=public_report_payload(
+                    task_id, format, store, app.state.base_url
+                )
+            )
+        return FileResponse(
+            path,
+            media_type="text/markdown; charset=utf-8",
+            filename=path.name,
+        )
+
+    @app.post("/api/v1/analysis-tasks/{task_id}/cancel")
+    async def cancel_analysis_task(task_id: str, request: Request) -> dict[str, Any]:
+        await machine_json(request)
+        require_operation(task_id, "analyze")
+        task = store.request_task_cancel(task_id)
+        return task_payload(task["task_id"], store, app.state.base_url)
+
+    @app.post("/api/v1/analysis-tasks/{task_id}/retry", status_code=202)
+    async def retry_analysis_task(task_id: str, request: Request) -> dict[str, Any]:
+        await machine_json(request)
+        require_operation(task_id, "analyze")
+        try:
+            task = store.retry_task(task_id)
+        except RuntimeError as exc:
+            raise StructuredError("TASK_NOT_RETRYABLE", "当前任务状态不能重试。") from exc
+        return task_payload(task["task_id"], store, app.state.base_url)
+
+    @app.post("/api/v1/analysis-tasks/{task_id}/corrections")
+    async def correct_analysis_task(task_id: str, request: Request) -> dict[str, Any]:
+        require_operation(task_id, "analyze")
+        result = apply_corrections(task_id, await machine_json(request), store)
+        return {
+            **{key: value for key, value in result.items() if key != "outputs"},
+            "report_url": f"{app.state.base_url}/api/v1/analysis-tasks/{task_id}/report",
+        }
+
+    @app.post("/api/v1/enrollment-tasks", status_code=202)
+    async def create_enrollment_task(request: Request) -> dict[str, Any]:
+        task, reused = enqueue_enrollment(await machine_json(request), store)
+        return task_payload(task["task_id"], store, app.state.base_url, reused=reused)
+
+    @app.get("/api/v1/enrollment-tasks/{task_id}")
+    def enrollment_task_status(task_id: str) -> dict[str, Any]:
+        require_operation(task_id, "enroll")
+        return task_payload(task_id, store, app.state.base_url, reused=True)
+
+    @app.get("/api/v1/enrollment-tasks/{task_id}/audition")
+    def enrollment_audition(task_id: str) -> FileResponse:
+        require_operation(task_id, "enroll")
+        path = audition_path(task_id, store)
+        return FileResponse(path, media_type="audio/ogg", filename="voiceprint-audition.ogg")
+
+    @app.post("/api/v1/enrollment-tasks/{task_id}/confirm")
+    async def confirm_enrollment_task(task_id: str, request: Request) -> dict[str, Any]:
+        require_operation(task_id, "enroll")
+        confirm_enrollment(task_id, await machine_json(request), store)
+        return task_payload(task_id, store, app.state.base_url)
+
+    @app.post("/api/v1/enrollment-tasks/{task_id}/cancel")
+    async def cancel_enrollment_task(task_id: str, request: Request) -> dict[str, Any]:
+        await machine_json(request)
+        task = require_operation(task_id, "enroll")
+        checkpoint = task.get("checkpoint") or {}
+        if checkpoint.get("session_id"):
+            with contextlib.suppress(KeyError):
+                store.cancel_review_session(str(checkpoint["session_id"]))
+        task = store.request_task_cancel(task_id)
+        return task_payload(task["task_id"], store, app.state.base_url)
+
+    @app.post("/api/v1/enrollment-tasks/{task_id}/retry", status_code=202)
+    async def retry_enrollment_task(task_id: str, request: Request) -> dict[str, Any]:
+        await machine_json(request)
+        require_operation(task_id, "enroll")
+        try:
+            task = store.retry_task(task_id)
+        except RuntimeError as exc:
+            raise StructuredError("TASK_NOT_RETRYABLE", "当前任务状态不能重试。") from exc
+        return task_payload(task["task_id"], store, app.state.base_url)
 
     @app.get("/api/v1/console/summary")
     def console_summary() -> dict[str, Any]:
@@ -228,7 +428,8 @@ def create_app(store: DataStore, *, base_url: str, download: bool = False) -> Fa
                 kind = "transcript"
             else:
                 continue
-            values.append({"path": str(resolved), "relative_path": str(item.relative_to(root)), "kind": kind})
+            relative_path = str(item.relative_to(root))
+            values.append({"path": relative_path, "relative_path": relative_path, "kind": kind})
             if len(values) >= 500:
                 break
         return {"customer_id": customer_id, "files": values}
@@ -411,8 +612,15 @@ def create_app(store: DataStore, *, base_url: str, download: bool = False) -> Fa
             manifest = normalize_review_manifest(raw_manifest)
             customer_id = str(manifest["customer"]["id"])
             for meeting in manifest.get("meetings") or [manifest["meeting"]]:
-                _safe_customer_file(store, customer_id, meeting["audio"], AUDIO_SUFFIXES)
-                _safe_customer_file(store, customer_id, meeting["transcript"], TRANSCRIPT_SUFFIXES)
+                # Resolve browser-facing relative paths only inside the backend.
+                # The persisted review manifest is an internal artifact and can
+                # therefore use validated absolute paths for the audio engine.
+                meeting["audio"] = str(
+                    _safe_customer_file(store, customer_id, meeting["audio"], AUDIO_SUFFIXES)
+                )
+                meeting["transcript"] = str(
+                    _safe_customer_file(store, customer_id, meeting["transcript"], TRANSCRIPT_SUFFIXES)
+                )
             with tempfile.TemporaryDirectory(prefix="speaker-review-api-") as temporary:
                 path = Path(temporary) / "manifest.json"
                 atomic_write_json(path, manifest)
@@ -579,6 +787,26 @@ def create_app(store: DataStore, *, base_url: str, download: bool = False) -> Fa
         except Exception as exc:
             raise _api_error(exc) from exc
 
+    @app.post("/api/v1/enrollment-sessions/{session_id}/retry-edit")
+    async def retry_edit(
+        session_id: str,
+        request: Request,
+        x_csrf_token: str | None = Header(default=None),
+        speaker_review_csrf: str | None = Cookie(default=None),
+    ) -> dict[str, Any]:
+        _require_csrf(speaker_review_csrf, x_csrf_token)
+        payload = await request.json()
+        try:
+            result = retry_failed_review_session(
+                session_id,
+                int(payload.get("revision", -1)),
+                store,
+                client=_client(request),
+            )
+            return _session_payload(store, result["session_id"])
+        except Exception as exc:
+            raise _api_error(exc) from exc
+
     @app.post("/api/v1/profiles/{person_id}/rollback")
     async def rollback(
         person_id: str,
@@ -734,5 +962,6 @@ def run_server(store: DataStore, *, host: str, port: int, base_url: str, downloa
     LOG.addHandler(handler)
     LOG.setLevel(logging.INFO)
     app = create_app(store, base_url=base_url, download=download)
-    uvicorn.run(app, host=host, port=port, log_level="info")
+    with service_runtime_lock(store):
+        uvicorn.run(app, host=host, port=port, log_level="info")
     return {"status": "stopped"}

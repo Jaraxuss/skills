@@ -47,6 +47,11 @@ export const getTranscriptSpeakers = (customerId: string, paths: string[]) =>
 export const getSessions = () => api("/api/v1/enrollment-sessions");
 export const getSession = (id: string) =>
   api(`/api/v1/enrollment-sessions/${encodeURIComponent(id)}`);
+export const retryFailedSession = (id: string, revision: number) =>
+  api(`/api/v1/enrollment-sessions/${encodeURIComponent(id)}/retry-edit`, {
+    method: "POST",
+    body: JSON.stringify({ revision }),
+  });
 export const getProfiles = (id: string) =>
   api(`/api/v1/customers/${encodeURIComponent(id)}/profiles`);
 export const getCandidates = (id: string) =>

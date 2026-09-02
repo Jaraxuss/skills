@@ -58,6 +58,7 @@ import {
   getSummary,
   getTranscriptPreview,
   getTranscriptSpeakers,
+  retryFailedSession,
 } from "./api";
 import type {
   Assignment,
@@ -310,6 +311,7 @@ const taskFilters = [
 ];
 
 export function EnrollmentListPage() {
+  const navigate = useNavigate();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [filter, setFilter] = useState("all");
@@ -317,6 +319,7 @@ export function EnrollmentListPage() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const [retryingSessionId, setRetryingSessionId] = useState("");
   const load = async () => {
     try {
       const [sessionResult, customerResult] = await Promise.all([
@@ -348,6 +351,20 @@ export function EnrollmentListPage() {
       await load();
     } catch (error) {
       setMessage((error as Error).message);
+    }
+  };
+  const retryEdit = async (event: MouseEvent, session: Session) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setRetryingSessionId(session.session_id);
+    try {
+      await retryFailedSession(session.session_id, session.revision);
+      navigate(`/enrollments/${encodeURIComponent(session.session_id)}`);
+    } catch (error) {
+      setMessage((error as Error).message);
+      await load();
+    } finally {
+      setRetryingSessionId("");
     }
   };
   const filtered = sessions.filter((session) => {
@@ -429,6 +446,23 @@ export function EnrollmentListPage() {
                     >
                       <RotateCcw size={14} />
                       重新开始
+                    </button>
+                  ) : session.status === "failed" &&
+                    session.can_retry_edit ? (
+                    <button
+                      type="button"
+                      className="icon-text-button"
+                      disabled={retryingSessionId === session.session_id}
+                      onClick={(event) => void retryEdit(event, session)}
+                    >
+                      {retryingSessionId === session.session_id ? (
+                        <Loader2 size={14} className="spin" />
+                      ) : (
+                        <RotateCcw size={14} />
+                      )}
+                      {retryingSessionId === session.session_id
+                        ? "正在恢复"
+                        : "继续编辑"}
                     </button>
                   ) : undefined
                 }
@@ -2843,6 +2877,7 @@ function ReviewStatusPage({
 }) {
   const navigate = useNavigate();
   const [message, setMessage] = useState("");
+  const [retrying, setRetrying] = useState(false);
   const active = ["queued", "preparing"].includes(session.status);
   const revisionMode = session.kind === "profile_revision";
   useEffect(() => {
@@ -2871,6 +2906,17 @@ function ReviewStatusPage({
       navigate(`/enrollments/${encodeURIComponent(result.session_id)}`);
     } catch (error) {
       setMessage((error as Error).message);
+    }
+  };
+  const retryEdit = async () => {
+    setRetrying(true);
+    try {
+      await retryFailedSession(session.session_id, session.revision);
+      await onRefresh();
+    } catch (error) {
+      setMessage((error as Error).message);
+    } finally {
+      setRetrying(false);
     }
   };
   const title =
@@ -2913,7 +2959,9 @@ function ReviewStatusPage({
         </span>
         <h1>{title}</h1>
         <p>
-          {session.error_message ||
+          {session.status === "failed" && session.can_retry_edit
+            ? `上次提交失败：${session.error_message || "未知错误"}。原审核内容仍然完整，可以恢复后继续编辑并重新提交。`
+            : session.error_message ||
             (session.status === "committed"
               ? revisionMode
                 ? "新版本已经生成；基础版本及其他历史版本保持不变。"
@@ -2946,6 +2994,28 @@ function ReviewStatusPage({
               按原素材重新开始
             </button>
           )}
+          {session.status === "failed" && session.can_retry_edit && (
+            <button
+              type="button"
+              className="button-primary"
+              disabled={retrying}
+              onClick={() => void retryEdit()}
+            >
+              {retrying ? (
+                <Loader2 size={16} className="spin" />
+              ) : (
+                <RotateCcw size={16} />
+              )}
+              {retrying ? "正在恢复…" : "重试并继续编辑"}
+            </button>
+          )}
+          {session.status === "failed" &&
+            !session.can_retry_edit &&
+            session.retry_edit_reason && (
+              <span className="status-action-note">
+                {session.retry_edit_reason}
+              </span>
+            )}
           <button
             type="button"
             className="button-secondary"

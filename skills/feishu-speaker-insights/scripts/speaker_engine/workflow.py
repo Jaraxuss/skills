@@ -6,7 +6,7 @@ import json
 import tempfile
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 import soundfile as sf
@@ -57,8 +57,8 @@ def validate_manifest(raw: dict[str, Any]) -> dict[str, Any]:
     audio_path = require_absolute_file(str(meeting["audio"]), "meeting.audio")
     transcript_path = require_absolute_file(str(meeting["transcript"]), "meeting.transcript")
     attendees = raw.get("attendees") or []
-    if not isinstance(attendees, list) or not attendees:
-        raise ValueError("At least one attendee is required")
+    if not isinstance(attendees, list):
+        raise ValueError("attendees must be a list")
     normalized = json.loads(json.dumps(raw, ensure_ascii=False))
     normalized["meeting"]["audio"] = str(audio_path)
     normalized["meeting"]["transcript"] = str(transcript_path)
@@ -438,6 +438,10 @@ def analyze_acoustic(
     manifest_path: Path,
     store: DataStore,
     download: bool = False,
+    *,
+    engine: EmbeddingEngine | None = None,
+    should_cancel: Callable[[], bool] | None = None,
+    on_progress: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     manifest = load_manifest(manifest_path)
     store.upsert_manifest(manifest)
@@ -447,10 +451,38 @@ def analyze_acoustic(
     run_dir = store.create_run(customer_id, meeting["id"], run_id, "analysis")
     audio_path = Path(meeting["audio"])
     transcript_path = Path(meeting["transcript"])
+
+    def report(
+        phase: str,
+        message: str,
+        current: int = 0,
+        total: int = 1,
+        **details: Any,
+    ) -> None:
+        if on_progress is not None:
+            on_progress(
+                {
+                    "phase": phase,
+                    "message": message,
+                    "current": current,
+                    "total": total,
+                    "percent": round(100.0 * current / total, 1) if total else 0.0,
+                    **details,
+                }
+            )
+
+    def ensure_active() -> None:
+        if should_cancel is not None and should_cancel():
+            raise InterruptedError("analysis_cancelled")
+
     try:
         with tempfile.TemporaryDirectory(prefix="speaker-analysis-") as temporary:
             wav_path = Path(temporary) / "meeting.wav"
+            ensure_active()
+            report("transcoding", f"正在转码录音：{meeting['title']}")
             convert_to_wav(audio_path, wav_path, int(PIPELINE_CONFIG["sample_rate"]))
+            ensure_active()
+            report("screening", "正在解析转写并筛选有效语音")
             utterances = parse_transcript(transcript_path, audio_duration(wav_path))
             index = transcript_index(utterances)
             profiles = store.analysis_profiles(
@@ -459,22 +491,52 @@ def analyze_acoustic(
                 index["labels"].keys(),
             )
             calibration = _calibration_for_profiles(store, customer_id, profiles)
-            engine = EmbeddingEngine(download=download) if profiles else None
+            active_engine = engine or (EmbeddingEngine(download=download) if profiles else None)
             all_candidates = build_candidates(wav_path, utterances, PIPELINE_CONFIG)
             results: list[dict[str, Any]] = []
             vector_dir = run_dir / "candidate_vectors"
             labels = list(index["labels"])
+            selected_by_label: dict[str, list[Candidate]] = {}
             for label in labels:
                 candidates = [item for item in all_candidates if item.label == label]
-                candidates = select_temporally_diverse(
+                selected_by_label[label] = select_temporally_diverse(
                     candidates,
                     int(PIPELINE_CONFIG["max_test_windows_per_label"]),
                 )
+            embedding_total = sum(len(items) for items in selected_by_label.values())
+            embedding_completed = 0
+            report(
+                "extracting_embeddings",
+                f"正在提取声纹：0 / {embedding_total} 个窗口",
+                0,
+                max(1, embedding_total),
+            )
+            for label_index, label in enumerate(labels, start=1):
+                ensure_active()
+                candidates = selected_by_label[label]
+
+                def label_progress(completed: int, total: int) -> None:
+                    report(
+                        "extracting_embeddings",
+                        f"正在提取声纹：{embedding_completed + completed} / {embedding_total} 个窗口（{label}）",
+                        embedding_completed + completed,
+                        max(1, embedding_total),
+                        label=label,
+                        label_index=label_index,
+                        label_total=len(labels),
+                    )
+
                 embeddings = (
-                    engine.embed_candidates(wav_path, candidates)
-                    if engine is not None
+                    active_engine.embed_candidates(
+                        wav_path,
+                        candidates,
+                        should_cancel=should_cancel,
+                        on_progress=label_progress,
+                    )
+                    if active_engine is not None
                     else np.empty((0, 192), dtype=np.float32)
                 )
+                embedding_completed += len(candidates)
                 match = match_label(candidates, embeddings, profiles, calibration)
                 vector_path = vector_dir / f"{safe_component(label, 'speaker')}.npz"
                 atomic_save_npz(
@@ -493,8 +555,8 @@ def analyze_acoustic(
                     }
                 )
         model_manifest = (
-            _model_manifest(engine)
-            if engine is not None
+            _model_manifest(active_engine)
+            if active_engine is not None
             else {
                 "id": MODEL_CONFIG["id"],
                 "revision": MODEL_CONFIG["revision"],
@@ -563,6 +625,7 @@ def analyze_acoustic(
             },
         )
         store.update_run(run_id, "awaiting_semantic_evidence")
+        report("acoustic_complete", "声学分析完成，等待语义结果", 1, 1)
         summaries = [
             {
                 key: value

@@ -207,6 +207,19 @@ class StorageTests(unittest.TestCase):
         self.assertEqual(result["to_version"], 1)
         self.assertEqual(self.store.get_person(person["person_id"])["current_version"], 1)
 
+    def test_profile_allocation_skips_orphaned_immutable_files(self) -> None:
+        person = self.store.upsert_manifest(manifest("a", "客户A"))["客户甲"]
+        self.store.save_profile(person, profile_arrays(1, 0), {"model": {}})
+        profile_dir = self.store.profile_dir(person)
+        (profile_dir / "v0002.npz").write_bytes(b"failed-commit-evidence")
+        (profile_dir / "v0002.json").write_text("{}", encoding="utf-8")
+        created = self.store.save_profile(
+            self.store.get_person(person["person_id"]),
+            profile_arrays(2, 0),
+            {"model": {}},
+        )
+        self.assertEqual(created["version"], 3)
+
     def test_disable_preserves_current_version_and_matching_excludes_profile(self) -> None:
         person = self.store.upsert_manifest(manifest("a", "客户A"))["客户甲"]
         self.store.save_profile(person, profile_arrays(1, 0), profile_manifest_with_windows())

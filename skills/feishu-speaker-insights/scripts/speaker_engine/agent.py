@@ -5,12 +5,13 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 import soundfile as sf
 
 from .constants import MODEL_CONFIG, PIPELINE_CONFIG, SCHEMA_VERSION
+from .embedding import EmbeddingEngine
 from .errors import StructuredError
 from .reporting import write_outputs
 from .review import (
@@ -242,7 +243,7 @@ def _verify_confirmation_context(
 
 def _failure_details(exc: Exception) -> tuple[str, dict[str, Any]]:
     if isinstance(exc, StructuredError):
-        return exc.code, exc.details
+        return exc.code, {"message": exc.message, **exc.details}
     return type(exc).__name__.upper(), {"message": str(exc)}
 
 
@@ -396,6 +397,7 @@ def _agent_enroll_start_impl(
     *,
     base_url: str | None = None,
     download: bool = False,
+    engine: EmbeddingEngine | None = None,
 ) -> dict[str, Any]:
     request = load_structured(request_path.resolve())
     manifest = _request_manifest(request, batch=True)
@@ -469,7 +471,11 @@ def _agent_enroll_start_impl(
             return _task_response(waiting, reused=reused)
         try:
             session = prepare_review_session(
-                session_id, store, download=download, job_id=str(job["job_id"])
+                session_id,
+                store,
+                download=download,
+                job_id=str(job["job_id"]),
+                engine=engine,
             )
         except Exception as exc:
             store.finish_review_job(
@@ -537,10 +543,15 @@ def agent_enroll_start(
     *,
     base_url: str | None = None,
     download: bool = False,
+    engine: EmbeddingEngine | None = None,
 ) -> dict[str, Any]:
     try:
         return _agent_enroll_start_impl(
-            request_path, store, base_url=base_url, download=download
+            request_path,
+            store,
+            base_url=base_url,
+            download=download,
+            engine=engine,
         )
     except Exception as exc:
         try:
@@ -749,7 +760,13 @@ def agent_enroll_confirm(request_path: Path, store: DataStore) -> dict[str, Any]
 
 
 def _agent_analyze_start_impl(
-    request_path: Path, store: DataStore, *, download: bool = False
+    request_path: Path,
+    store: DataStore,
+    *,
+    download: bool = False,
+    engine: EmbeddingEngine | None = None,
+    should_cancel: Callable[[], bool] | None = None,
+    on_progress: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     request = load_structured(request_path.resolve())
     manifest = _request_manifest(request, batch=False)
@@ -768,7 +785,14 @@ def _agent_analyze_start_impl(
     manifest_path = task_dir / "manifest.json"
     atomic_write_json(manifest_path, manifest)
     store.update_task(task["task_id"], status="running", phase="acoustic_analysis")
-    acoustic = analyze_acoustic(manifest_path, store, download=download)
+    acoustic = analyze_acoustic(
+        manifest_path,
+        store,
+        download=download,
+        engine=engine,
+        should_cancel=should_cancel,
+        on_progress=on_progress,
+    )
     semantic_request = {
         "schema_version": 1,
         "task_id": task["task_id"],
@@ -806,15 +830,35 @@ def _agent_analyze_start_impl(
         status="awaiting_semantic",
         phase="awaiting_semantic",
         checkpoint=checkpoint,
+        progress={
+            "phase": "awaiting_semantic",
+            "current": 1,
+            "total": 1,
+            "percent": 100.0,
+            "message": "声学分析完成，等待语义结果",
+        },
     )
     return _task_response(task, reused=reused)
 
 
 def agent_analyze_start(
-    request_path: Path, store: DataStore, *, download: bool = False
+    request_path: Path,
+    store: DataStore,
+    *,
+    download: bool = False,
+    engine: EmbeddingEngine | None = None,
+    should_cancel: Callable[[], bool] | None = None,
+    on_progress: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     try:
-        return _agent_analyze_start_impl(request_path, store, download=download)
+        return _agent_analyze_start_impl(
+            request_path,
+            store,
+            download=download,
+            engine=engine,
+            should_cancel=should_cancel,
+            on_progress=on_progress,
+        )
     except Exception as exc:
         try:
             request = load_structured(request_path.resolve())
@@ -872,6 +916,13 @@ def _agent_analyze_complete_impl(
         status="running",
         phase="semantic_validation",
         semantic_hash=semantic_hash,
+        progress={
+            "phase": "finalizing",
+            "current": 0,
+            "total": 1,
+            "percent": 0.0,
+            "message": "正在校验语义结果并生成报告",
+        },
     )
     try:
         result = analyze_finalize(
@@ -885,7 +936,7 @@ def _agent_analyze_complete_impl(
             checkpoint={**checkpoint, "semantic_response": str(semantic_response_path.resolve())},
             semantic_hash=semantic_hash,
             error_code=exc.code,
-            error_details=exc.details,
+            error_details={"message": exc.message, **exc.details},
         )
         raise
     result_path = Path(result["outputs"]["json"])
@@ -903,6 +954,13 @@ def _agent_analyze_complete_impl(
         checkpoint=checkpoint,
         result_path=result_path,
         semantic_hash=semantic_hash,
+        progress={
+            "phase": "completed",
+            "current": 1,
+            "total": 1,
+            "percent": 100.0,
+            "message": "识别报告已生成",
+        },
         completed=True,
     )
     return _task_response(task, reused=False)

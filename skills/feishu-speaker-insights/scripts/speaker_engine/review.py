@@ -693,6 +693,7 @@ def prepare_review_session(
     download: bool = False,
     *,
     job_id: str | None = None,
+    engine: EmbeddingEngine | None = None,
 ) -> dict[str, Any]:
     session = store.get_review_session(session_id)
     if session["status"] in {"cancelled", "expired", "committed"}:
@@ -730,7 +731,7 @@ def prepare_review_session(
     )
     with tempfile.TemporaryDirectory(prefix="speaker-review-prepare-") as temporary:
         temporary_root = Path(temporary)
-        engine = EmbeddingEngine(download=download)
+        engine = engine or EmbeddingEngine(download=download)
         for meeting_index, meeting in enumerate(meetings, start=1):
             _ensure_review_active(store, session_id)
             source_id = f"source-{meeting_index}"
@@ -1067,7 +1068,12 @@ def prepare_review_session(
     )
 
 
-def run_next_review_job(store: DataStore, download: bool = False) -> dict[str, Any] | None:
+def run_next_review_job(
+    store: DataStore,
+    download: bool = False,
+    *,
+    engine: EmbeddingEngine | None = None,
+) -> dict[str, Any] | None:
     job = store.claim_review_job()
     if job is None:
         return None
@@ -1077,6 +1083,7 @@ def run_next_review_job(store: DataStore, download: bool = False) -> dict[str, A
             store,
             download=download,
             job_id=str(job["job_id"]),
+            engine=engine,
         )
         if session["status"] == "review_required":
             store.finish_review_job(
@@ -1119,6 +1126,79 @@ def _load_package(session: dict[str, Any]) -> dict[str, Any]:
     if not session.get("package_path"):
         raise RuntimeError("审核包尚未准备完成")
     return load_structured(Path(session["package_path"]))
+
+
+def failed_review_retry_eligibility(
+    session: dict[str, Any],
+) -> tuple[bool, str | None]:
+    """Return whether a failed review still has enough state to resume editing."""
+    if session.get("status") != "failed":
+        return False, None
+    package_path_value = session.get("package_path")
+    if not package_path_value:
+        return False, "任务在审核包生成前失败，请重新创建任务"
+    package_path = Path(package_path_value)
+    if not package_path.is_file():
+        return False, "原审核包已经不存在，请重新创建任务"
+    try:
+        package = load_structured(package_path)
+    except Exception:
+        return False, "原审核包无法读取，请重新创建任务"
+    if not package.get("segments"):
+        return False, "原审核包没有可编辑片段，请重新创建任务"
+    pending_path = package_path.parent / str(
+        package.get("pending_vector_file") or "pending_vectors.npz"
+    )
+    if not pending_path.is_file():
+        return False, "待审核声纹向量已经清理，请重新创建任务"
+    return True, None
+
+
+def retry_failed_review_session(
+    session_id: str,
+    revision: int,
+    store: DataStore,
+    *,
+    actor: str | None = None,
+    client: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Resume a failed commit in-place without recomputing its review package."""
+    with file_lock(store.locks_dir / f"review-{session_id}.lock"):
+        session = store.get_review_session(session_id)
+        # A repeated request after a successful recovery is harmless and
+        # returns the already editable session.
+        if session["status"] == "review_required":
+            return session
+        if session["status"] != "failed":
+            raise RuntimeError(f"此会话不可恢复编辑：{session['status']}")
+        if int(session["revision"]) != int(revision):
+            raise RuntimeError("review_revision_conflict")
+        eligible, reason = failed_review_retry_eligibility(session)
+        if not eligible:
+            raise RuntimeError(reason or "失败任务无法恢复编辑")
+        package = _load_package(session)
+        try:
+            _verify_source(session, package, store)
+        except Exception as exc:
+            store.set_review_session(
+                session_id,
+                status="source_changed",
+                error_message=str(exc),
+                actor=actor,
+                client=client,
+                event_type="review_retry_source_changed",
+            )
+            raise
+        return store.set_review_session(
+            session_id,
+            status="review_required",
+            error_message="",
+            expected_revision=revision,
+            bump_revision=True,
+            actor=actor,
+            client=client,
+            event_type="review_failed_reopened",
+        )
 
 
 def _verify_source(session: dict[str, Any], package: dict[str, Any], store: DataStore) -> None:

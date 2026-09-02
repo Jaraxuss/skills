@@ -5,14 +5,14 @@ description: 使用客户隔离的本地声纹识别飞书妙记中的匿名说�
 
 # 飞书妙记声纹识别与观点
 
-使用 `scripts/speaker_insights.py` 完成音频处理、声纹存储、匹配、审核和报告渲染。Agent 只负责整理输入、提取可回查的上下文证据与观点，不自由修改声纹分数或最终规则。
+声纹后端是客户目录、SQLite、模型、声纹文件、任务状态和校准缓存的唯一业务所有者。网页和 OpenClaw 都调用后端 API；业务 CLI 只是 API 薄客户端。Agent 只负责整理输入、生成可回查的上下文证据与观点，不直接访问声纹存储，也不自由修改声纹分数或最终规则。
 
 ## 先判断任务类型
 
-- OpenClaw 等 Agent 发起首次建库或后续录音分析时，先读 [Agent 工作流](references/agent-workflows.md) 和 [数据格式](references/schemas.md)，默认调用稳定的 `agent` 端到端接口。
+- OpenClaw 等 Agent 发起首次建库或后续录音分析时，先读 [Agent 工作流](references/agent-workflows.md) 和 [后端 API](references/api.md)。优先直接请求 API；运行环境没有合适 HTTP 能力时才用 `agent` 薄 CLI。
 - 简单首次建库（一个目标人，最多三组非红色候选）使用飞书消息试听与确认；复杂、多人员或混合风险任务自动转浏览器审核台。浏览器操作见 [审核台](references/review-console.md)。
-- 后续录音调用 `agent analyze-start`，根据其 `semantic_request` 一次生成上下文和观点，再调用 `agent analyze-complete`。不要让用户配置阈值或填写 JSON。
-- 用户只纠正本次报告身份时调用 `agent analysis-correct`。它不得创建、扩充或切换声纹；声纹扩充必须另走候选审核和明确确认。
+- 后续录音通过 API 创建异步识别任务；到达 `awaiting_semantic` 后读取语义请求，一次生成上下文和观点并提交。不要让用户配置阈值或填写 JSON。
+- 用户只纠正本次报告身份时调用纠正 API。它不得创建、扩充或切换声纹；声纹扩充必须另走候选审核和明确确认。
 - 声纹版本、停用、扩充候选和版本修订读 [审核台](references/review-console.md)。
 - 安装、迁移、模型准备或运行故障读 [部署说明](references/deployment.md)，先运行 `doctor`。
 - 置信度与冲突处理读 [身份判定规则](references/identity-resolution.md)。
@@ -31,20 +31,18 @@ description: 使用客户隔离的本地声纹识别飞书妙记中的匿名说�
 - `vNNNN` 永远不可变。切换只改变当前版本指针；停用不删除版本；从历史版本修改必须生成更高的新版本。
 - 后续录音产生的声纹扩充候选不会自动进入正式库。当前版本中，同一人的多个候选仍分别审核；混合标签暂不自动二次拆分。
 - 审核服务只能在本机或可信局域网运行，不得暴露到公网。
+- OpenClaw 不得读取 SQLite、声纹 NPZ/JSON、`FEISHU_SPEAKER_CUSTOMERS_ROOT`，也不得向业务请求传绝对路径或 `--customers-root`。客户和文件位置只能通过后端 API 解析。
 
 ## 标准执行方式
 
-1. 运行 `paths`，明确客户目录、共享声纹库、模型缓存和本次输出位置。
-2. 运行 `doctor`；缺少 FFmpeg、模型、依赖或写权限时停止。
-3. 输入清单使用绝对路径，并遵循 [数据格式](references/schemas.md)。
-4. 通过 `voiceprint-poc` Conda 环境执行：
+1. 调用后端 `GET /api/v1/capabilities`，确认 `service_api: 1`；再用 `GET /api/v1/customers` 确定客户 ID。
+2. 录音和转写由 Agent 下载到所选客户目录；业务请求只传客户内相对路径。后端不可用时停止，不回退为本地模型或数据库操作。
+3. 创建异步任务并轮询状态；`task_id`、`session_id`、候选不可变 ID 和哈希只保存在 Agent 状态中。
+4. 根据语义请求生成符合 [数据格式](references/schemas.md) 的结果。失败时读取 `error_code`、`retryable` 和 `details`，修复后继续原任务。
+5. 完成后优先发送后端 `format=feishu` 返回的 `message_markdown`；用户需要详情时再发送 Markdown 报告。
+6. 简单建库发送后端生成的合并试听；复杂任务把 `review_url` 交给用户，不在聊天中逐标签追问。
 
-   `conda run -n voiceprint-poc python scripts/speaker_insights.py ...`
-
-5. Agent 接口返回的 `task_id`、`session_id`、候选不可变 ID 和哈希只保存在 Agent 状态中，不原样要求用户操作。
-6. 命令失败时读取 JSON 的 `error_code`、`retryable` 和 `details`；可重试错误按原任务恢复，不新建重复任务。
-7. 分析完成后优先发送 `feishu_summary.json` 中已经排版好的 `message_markdown`，同时保留 Markdown 详细报告和完整 JSON 供用户打开。
-8. 发生写入时返回准确的声纹版本、候选或报告路径。
+管理员安装、迁移和排障才使用 `scripts/speaker_insights.py doctor|paths|migrate|admin|offline|review serve`。这些命令见 [部署说明](references/deployment.md)；不要把管理员直连能力用于 OpenClaw 业务流程。
 
 ## 数据与用途边界
 

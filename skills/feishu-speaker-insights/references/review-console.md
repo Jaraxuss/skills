@@ -40,12 +40,7 @@
 
 只要可能创建或扩充声纹档案，后端都必须创建审核会话。简单单人任务可以由 OpenClaw 在飞书中发送合并试听音频，并把用户明确说出的“确认建库”写回同一个审核会话；多人员、混合风险或逐片段选择仍进入浏览器。两种入口共用来源哈希、选择校验、原子提交和版本规则，准备阶段都不会创建正式声纹。
 
-```text
-speaker_insights.py --customers-root <客户根> enroll review-create \
-  --manifest /absolute/path/meeting.yaml --base-url http://192.168.31.169:8765
-```
-
-复杂任务将 `review_url` 返回给用户，不要继续在聊天中逐个标签提问。简单飞书流程见 [Agent 工作流](agent-workflows.md)；技术任务 ID 由 Agent 内部保存，用户只操作 A/B/C 短代号并说“确认建库”。用户无需试听片段也可明确确认；审核记录会保留可获得的播放和确认元数据，但不会因此增加第二次审批步骤。
+OpenClaw 通过 `POST /api/v1/enrollment-tasks` 创建简单建库任务；网页则通过同源审核 API 创建完整任务。复杂任务会把 `review_url` 返回给用户，不要继续在聊天中逐个标签提问。简单飞书流程见 [Agent 工作流](agent-workflows.md)；技术任务 ID 由 Agent 内部保存，用户只操作 A/B/C 短代号并说“确认建库”。用户无需试听片段也可明确确认；审核记录会保留可获得的播放和确认元数据，但不会因此增加第二次审批步骤。
 
 页面允许将片段分配给参会人、`未知`、`路人/杂音` 或 `暂不建库`，并支持新增客户人员或我方人员。多个标签或聚类可以归属同一人。提交声纹档案时，必须至少有 6 个内部一致、合计 12 秒的有效窗口，且源录音和转写的哈希仍须一致。
 
@@ -55,7 +50,11 @@ speaker_insights.py --customers-root <客户根> enroll review-create \
 queued → preparing → review_required → committing → committed
 ```
 
-`failed`、`cancelled`、`expired` 和 `source_changed` 状态均不可提交。会话取消或过期后会删除待审核向量；原始文件和最小审计记录会保留。重复提交具有幂等性，将返回相同结果。
+`failed`、`cancelled`、`expired` 和 `source_changed` 状态均不可直接提交。会话取消或过期后会删除待审核向量；原始文件和最小审计记录会保留。重复提交具有幂等性，将返回相同结果。
+
+若任务在“确认建库”过程中失败，但原审核包和待审核向量仍完整，任务列表和失败详情会提供“继续编辑 / 重试并继续编辑”。恢复发生在原会话中，不重新转码或提取声纹，并保留用户之前的人员分配；恢复前会再次校验录音、转写、审核包和向量。恢复会递增审核修订号并清空上次错误，随后回到 `review_required`。如果任务是在审核包生成前失败、临时向量已清理，或来源文件已改变，则不允许恢复编辑，并给出重新创建任务或来源变化提示。
+
+失败提交遗留的不可变版本文件和 `failed_commit` 记录不会删除或覆盖。再次提交时，新版本号会同时避开 SQLite 中已登记版本和磁盘上的历史版本文件，保证重试不会因残留文件再次冲突。
 
 在 `queued`、`preparing` 或 `review_required` 时，可以点击页面中的“取消任务”。取消不会创建或修改正式声纹；正在提取向量的任务会在最多 4 个窗口后协作停止。取消后可直接重新创建新任务。
 
@@ -68,19 +67,16 @@ queued → preparing → review_required → committing → committed
 Mac（按需启动）：
 
 ```text
-speaker_insights.py --customers-root /Users/velen/Desktop/Velen/Z7Z8/客户 \
-  review serve --host 127.0.0.1 --port 8765 --base-url http://127.0.0.1:8765
+FEISHU_SPEAKER_CUSTOMERS_ROOT=/Users/velen/Desktop/Velen/Z7Z8/客户 \
+conda run -n voiceprint-poc python scripts/speaker_insights.py review serve \
+  --host 127.0.0.1 --port 8765 --base-url http://127.0.0.1:8765
 ```
 
-Ubuntu 运行对应的 systemd 用户服务。它只绑定配置的局域网地址，并使用一个含 3 个 Torch CPU 线程的 Worker。API 不开放 CORS，并使用同站 CSRF 令牌；这不能替代网络隔离。
+Ubuntu 运行对应的 systemd 用户服务。客户根目录只存在于后端服务环境；OpenClaw 只配置 `FEISHU_SPEAKER_API_URL`。服务只绑定配置的局域网地址，并使用一个含 3 个 Torch CPU 线程的 Worker。API 不开放 CORS，并使用同站 CSRF 令牌；这不能替代网络隔离。
 
 ## 候选扩充与声纹管理
 
-通过 `profile candidates --customer ID` 列出候选声纹，再用下列命令创建浏览器审核会话：
-
-```text
-speaker_insights.py --customers-root <客户根> profile review-create --candidate CANDIDATE.json
-```
+在“声纹档案”或候选列表中查看扩充候选并发起审核。网页直接调用后端 API，不需要用户或 OpenClaw 读取候选 JSON 路径。
 
 “声纹档案”进入后直接显示全局人员档案列表；我方人员只显示一次，客户人员显示所属客户。搜索、客户、归属和状态集中在表格顶部的紧凑单行工具栏，修改后自动筛选；列表由后端分页，打开人员的“版本”面板后才读取完整历史。
 
@@ -89,11 +85,6 @@ speaker_insights.py --customers-root <客户根> profile review-create --candida
 版本面板只负责查看来源、切换当前版本和发起修订，不直接修改窗口。从历史版本点击“创建版本修订任务”后，会进入与首次建库共用的全屏审核工作区：按来源查看转写、试听仍可定位到原录音的片段、整组或逐段保留/排除，并实时检查 6 段、12 秒要求。原始录音路径缺失的旧版本仍可根据已保存的转写和向量修订，但页面会明确显示不可试听。
 
 早期声纹版本可能只有向量，没有保存逐向量的来源窗口。此类版本仍可正常用于识别，也可在人工确认后扩充；扩充生成的新版本会为历史向量写入明确的“历史来源缺失”占位元数据，保证向量与来源索引对齐，但不会虚构录音、时间戳或原文。由于无法逐片段回查，这类旧版本本身不能发起版本修订，接口会返回明确错误；新扩充进来的片段仍保留完整来源。
-
-```text
-speaker_insights.py --customers-root <客户根> profile revision-review-create \
-  --person PERSON_ID --base-version 1 --base-url http://HOST:8765
-```
 
 任务提交时可“仅保存新版”或“保存新版并设为当前”。新版本号始终为该人员历史最大版本号加一，例如当前从 v0003 切到 v0001 后派生，结果是 v0004，而不是覆盖 v0002。任务取消、过期或校验失败均不修改正式版本。
 

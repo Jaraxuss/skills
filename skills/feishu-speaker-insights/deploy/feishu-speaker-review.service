@@ -1,5 +1,5 @@
 [Unit]
-Description=Feishu speaker enrollment review console
+Description=Feishu speaker business API and review console
 After=network-online.target
 Wants=network-online.target
 

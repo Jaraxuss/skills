@@ -9,19 +9,18 @@ from pathlib import Path
 from typing import Any
 
 from speaker_engine.embedding import doctor as embedding_doctor
-from speaker_engine.agent import (
-    agent_analysis_correct,
-    agent_analyze_complete,
-    agent_analyze_start,
-    agent_enroll_confirm,
-    agent_enroll_start,
-    agent_task_status,
-    capabilities,
-)
+from speaker_engine.agent import capabilities
+from speaker_engine.api_client import agent_api_command
 from speaker_engine.errors import StructuredError
 from speaker_engine.util import cache_root, customers_root, data_root
 from speaker_engine.storage import DataStore
 from speaker_engine.migration import apply_layout_migration, layout_migration_plan
+from speaker_engine.maintenance import (
+    database_check,
+    inspect_task,
+    repair_tasks,
+    runtime_lock_file,
+)
 from speaker_engine.review import (
     cleanup_review_artifacts,
     commit_review_session,
@@ -234,21 +233,45 @@ def build_parser() -> argparse.ArgumentParser:
     agent_commands = agent.add_subparsers(dest="agent_command", required=True)
     agent_enroll_start_parser = agent_commands.add_parser("enroll-start")
     agent_enroll_start_parser.add_argument("--request", type=Path, required=True)
-    agent_enroll_start_parser.add_argument("--base-url")
+    agent_enroll_start_parser.add_argument("--api-url")
     agent_enroll_start_parser.add_argument("--download", action="store_true")
     agent_enroll_confirm_parser = agent_commands.add_parser("enroll-confirm")
     agent_enroll_confirm_parser.add_argument("--request", type=Path, required=True)
+    agent_enroll_confirm_parser.add_argument("--api-url")
     agent_analyze_start_parser = agent_commands.add_parser("analyze-start")
     agent_analyze_start_parser.add_argument("--request", type=Path, required=True)
+    agent_analyze_start_parser.add_argument("--api-url")
     agent_analyze_start_parser.add_argument("--download", action="store_true")
     agent_analyze_complete_parser = agent_commands.add_parser("analyze-complete")
     agent_analyze_complete_parser.add_argument("--task", required=True)
     agent_analyze_complete_parser.add_argument("--semantic-response", type=Path, required=True)
+    agent_analyze_complete_parser.add_argument("--api-url")
     agent_status_parser = agent_commands.add_parser("task-status")
     agent_status_parser.add_argument("--task", required=True)
+    agent_status_parser.add_argument("--api-url")
+    agent_semantic_parser = agent_commands.add_parser("semantic-request")
+    agent_semantic_parser.add_argument("--task", required=True)
+    agent_semantic_parser.add_argument("--output", type=Path)
+    agent_semantic_parser.add_argument("--api-url")
+    agent_report_parser = agent_commands.add_parser("report")
+    agent_report_parser.add_argument("--task", required=True)
+    agent_report_parser.add_argument(
+        "--format", choices=("feishu", "json", "markdown"), default="feishu"
+    )
+    agent_report_parser.add_argument("--output", type=Path)
+    agent_report_parser.add_argument("--api-url")
+    agent_cancel_parser = agent_commands.add_parser("task-cancel")
+    agent_cancel_parser.add_argument("--task", required=True)
+    agent_cancel_parser.add_argument("--operation", choices=("analyze", "enroll"))
+    agent_cancel_parser.add_argument("--api-url")
+    agent_retry_parser = agent_commands.add_parser("task-retry")
+    agent_retry_parser.add_argument("--task", required=True)
+    agent_retry_parser.add_argument("--operation", choices=("analyze", "enroll"))
+    agent_retry_parser.add_argument("--api-url")
     agent_correct_parser = agent_commands.add_parser("analysis-correct")
     agent_correct_parser.add_argument("--task", required=True)
     agent_correct_parser.add_argument("--corrections", type=Path, required=True)
+    agent_correct_parser.add_argument("--api-url")
 
     migrate = commands.add_parser("migrate", help="Copy legacy speaker data into the customer-root layout")
     migrate_commands = migrate.add_subparsers(dest="migrate_command", required=True)
@@ -258,6 +281,21 @@ def build_parser() -> argparse.ArgumentParser:
     action = layout.add_mutually_exclusive_group(required=True)
     action.add_argument("--dry-run", action="store_true")
     action.add_argument("--apply", action="store_true")
+
+    admin = commands.add_parser("admin", help="Inspect or repair backend-owned local data")
+    admin_commands = admin.add_subparsers(dest="admin_command", required=True)
+    admin_commands.add_parser("db-check")
+    admin_commands.add_parser("repair")
+    admin_task = admin_commands.add_parser("task-inspect")
+    admin_task.add_argument("--task", required=True)
+
+    offline = commands.add_parser("offline", help="Run isolated administrator-only tests")
+    offline_commands = offline.add_subparsers(dest="offline_command", required=True)
+    offline_test = offline_commands.add_parser("test")
+    offline_test.add_argument("--manifest", type=Path, required=True)
+    offline_test.add_argument("--context", type=Path)
+    offline_test.add_argument("--viewpoints", type=Path, required=True)
+    offline_test.add_argument("--download", action="store_true")
     return parser
 
 
@@ -269,29 +307,56 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
     if args.command == "doctor":
         return doctor_command(args)
     if args.command == "migrate" and args.migrate_command == "layout":
-        return (
-            apply_layout_migration(args.from_data_dir, args.customers_root)
-            if args.apply
-            else layout_migration_plan(args.from_data_dir, args.customers_root)
+        if not args.apply:
+            return layout_migration_plan(args.from_data_dir, args.customers_root)
+        lock_path = (
+            args.customers_root.expanduser().resolve()
+            / "共享数据"
+            / "声纹数据"
+            / ".locks"
+            / "service-runtime.lock"
+        )
+        with runtime_lock_file(lock_path):
+            return apply_layout_migration(args.from_data_dir, args.customers_root)
+    if args.command == "agent":
+        if args.data_dir or args.customers_root:
+            raise StructuredError(
+                "BUSINESS_STORAGE_OVERRIDE_BLOCKED",
+                "业务命令只调用后端 API，不能指定数据目录。",
+            )
+        if getattr(args, "download", False):
+            raise StructuredError(
+                "BACKEND_OWNS_MODEL",
+                "模型下载由后端服务管理，业务 CLI 不能使用 --download。",
+            )
+        return agent_api_command(
+            args.agent_command,
+            api_url=getattr(args, "api_url", None),
+            request_path=getattr(args, "request", None),
+            task_id=getattr(args, "task", None),
+            semantic_path=getattr(args, "semantic_response", None),
+            corrections_path=getattr(args, "corrections", None),
+            report_format=getattr(args, "format", None),
+            output_path=getattr(args, "output", None),
+            operation=getattr(args, "operation", None),
         )
     store = make_store(args)
-    if args.command == "agent" and args.agent_command == "enroll-start":
-        return agent_enroll_start(
-            args.request,
-            store,
-            base_url=args.base_url,
-            download=args.download,
+    if args.command == "admin" and args.admin_command == "db-check":
+        return database_check(store)
+    if args.command == "admin" and args.admin_command == "repair":
+        return repair_tasks(store)
+    if args.command == "admin" and args.admin_command == "task-inspect":
+        return inspect_task(store, args.task)
+    if args.command == "offline" and args.offline_command == "test":
+        if args.data_dir is None:
+            raise StructuredError(
+                "OFFLINE_DATA_DIR_REQUIRED",
+                "离线测试必须显式使用 --data-dir 指向隔离目录。",
+            )
+        acoustic = analyze_acoustic(args.manifest, store, args.download)
+        return analyze_finalize(
+            Path(acoustic["run_dir"]), args.context, args.viewpoints, store
         )
-    if args.command == "agent" and args.agent_command == "enroll-confirm":
-        return agent_enroll_confirm(args.request, store)
-    if args.command == "agent" and args.agent_command == "analyze-start":
-        return agent_analyze_start(args.request, store, download=args.download)
-    if args.command == "agent" and args.agent_command == "analyze-complete":
-        return agent_analyze_complete(args.task, args.semantic_response, store)
-    if args.command == "agent" and args.agent_command == "task-status":
-        return agent_task_status(args.task, store)
-    if args.command == "agent" and args.agent_command == "analysis-correct":
-        return agent_analysis_correct(args.task, args.corrections, store)
     if args.command == "customer" and args.customer_command == "upsert":
         return customer_upsert(args.manifest, store)
     if args.command == "enroll" and args.enroll_command == "prepare":

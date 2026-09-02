@@ -184,6 +184,8 @@ export type Session = {
   package?: Package;
   playback_count?: number;
   error_message?: string;
+  can_retry_edit?: boolean;
+  retry_edit_reason?: string;
   job?: ReviewJob | null;
   customer_id?: string;
   customer_name?: string;

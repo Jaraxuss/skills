@@ -1,6 +1,6 @@
 interface:
   display_name: "飞书妙记声纹与观点"
   short_description: "用本地声纹识别妙记说话人并整理个人观点"
-  default_prompt: "使用 $feishu-speaker-insights：简单单人首次建库优先走飞书合并试听与明确消息确认，复杂任务转本地审核台；后续妙记录音用稳定 Agent 接口识别全部标签，输出 Top-1/Top-2 声纹证据、每人核心观点和固定飞书简报。技术任务 ID 只在 Agent 内部传递。"
+  default_prompt: "使用 $feishu-speaker-insights：业务操作优先直接调用声纹后端 API，不读取客户根目录、SQLite 或声纹文件；不具备 HTTP 能力时才调用 agent 薄 CLI。简单单人首次建库走飞书合并试听与明确消息确认，复杂任务转审核台；后续录音提交语义结果后读取后端生成的固定飞书简报。技术任务 ID 仅在 Agent 内部传递。"
 policy:
   allow_implicit_invocation: true
