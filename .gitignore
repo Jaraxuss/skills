@@ -178,3 +178,5 @@ read_ppt.py
 add_notes_to_ppt.py
 
 outputs/
+experiments/
+skills/feishu-speaker-insights/scripts/tests/run_golden.py
