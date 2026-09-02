@@ -290,6 +290,10 @@ class ServiceApiTests(unittest.TestCase):
                     f"/api/v1/analysis-tasks/{task['task_id']}/report?format=feishu"
                 )
                 self.assertEqual(summary.json()["message_markdown"], "完成")
+                delivery = summary.json()["delivery_contract"]
+                self.assertTrue(delivery["message_required"])
+                self.assertTrue(delivery["markdown_attachment_required"])
+                self.assertTrue(delivery["claim_sent_only_after_transport_success"])
                 self.assertIn("markdown", summary.json()["report_urls"])
                 self.assertNotIn(str(self.root), summary.text)
                 complete = client.get(

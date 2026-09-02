@@ -166,6 +166,56 @@ class AgentWorkflowTests(unittest.TestCase):
         self.assertIn("核心观点", summary["message_markdown"])
         self.assertIn("声纹排序", summary["message_markdown"])
 
+    def test_report_separates_label_hint_from_semantic_context(self) -> None:
+        run_dir = self.root / "report-output"
+        run_dir.mkdir()
+        row = self.resolved_row()
+        outputs = write_outputs(
+            run_dir,
+            self.bundle(),
+            [row],
+            [
+                {
+                    "target_label": "说话人 1",
+                    "supported_person": "张总",
+                    "strength": "strong",
+                    "type": "exact_named_label",
+                    "source_label": "说话人 1",
+                    "timestamp": "00:00",
+                    "excerpt": "我们需要先确认项目范围",
+                    "evidence_category": "transcript_label_hint",
+                },
+                {
+                    "target_label": "说话人 1",
+                    "supported_person": "张总",
+                    "strength": "strong",
+                    "type": "direct_address_response",
+                    "source_label": "主持人",
+                    "timestamp": "00:00",
+                    "excerpt": "张总，您怎么看",
+                    "evidence_category": "semantic_context",
+                },
+            ],
+            [],
+            [
+                {
+                    "transcript_label": "说话人 1",
+                    "timestamp": "00:00",
+                    "category": "需求",
+                    "point": "需要先确认项目范围。",
+                    "source_excerpt": "确认项目范围",
+                }
+            ],
+            [],
+            [],
+            [],
+        )
+        report = Path(outputs["report"]).read_text(encoding="utf-8")
+        self.assertIn("## 转写标签身份线索", report)
+        self.assertIn("不是独立的语义身份证据", report)
+        self.assertIn("## 可审计上下文身份证据", report)
+        self.assertIn("点名或提问后", report)
+
     def test_combined_audition_audio_is_a_single_playable_ogg(self) -> None:
         package = {
             "source": {

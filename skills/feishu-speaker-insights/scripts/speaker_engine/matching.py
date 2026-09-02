@@ -236,6 +236,55 @@ def weighted_median(values: np.ndarray, weights: np.ndarray) -> float:
     return float(sorted_values[min(index, len(sorted_values) - 1)])
 
 
+def pooled_voiceprint_scores(
+    embeddings: np.ndarray,
+    weights: np.ndarray,
+    profiles: dict[str, dict[str, Any]],
+    top_k: int,
+) -> dict[str, Any]:
+    """Summarize a speaker label as one quality-weighted multi-window voiceprint.
+
+    The conservative per-window median remains the acceptance score.  Pooling
+    reduces phonetic and short-window variance and is therefore a more useful
+    human-facing description of a long label's overall acoustic similarity.
+    A ranking disagreement is retained explicitly instead of silently changing
+    the accepted identity.
+    """
+    if embeddings.size == 0:
+        return {
+            "scores": {},
+            "top1_person_id": None,
+            "top1_score": None,
+            "top2_person_id": None,
+            "top2_score": None,
+            "score_margin": None,
+        }
+    normalized_weights = np.asarray(weights, dtype=np.float32)
+    normalized_weights = normalized_weights / max(float(normalized_weights.sum()), 1e-8)
+    pooled = normalize(np.sum(embeddings * normalized_weights[:, None], axis=0))
+    scores = {
+        person_id: score_to_bank(
+            pooled, profiles[person_id]["arrays"]["references"], top_k
+        )
+        for person_id in profiles
+    }
+    ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
+    top1_person_id, top1_score = ranked[0]
+    if len(ranked) > 1:
+        top2_person_id, top2_score = ranked[1]
+        margin: float | None = top1_score - top2_score
+    else:
+        top2_person_id, top2_score, margin = None, None, None
+    return {
+        "scores": scores,
+        "top1_person_id": top1_person_id,
+        "top1_score": top1_score,
+        "top2_person_id": top2_person_id,
+        "top2_score": top2_score,
+        "score_margin": margin,
+    }
+
+
 def match_label(
     candidates: list[Candidate],
     embeddings: np.ndarray,
@@ -260,6 +309,15 @@ def match_label(
             "notes": ["当前客户范围内没有可用声纹档案"],
             "scores": {},
             "segment_votes": {},
+            "pooled_scores": {},
+            "pooled_top1_person_id": None,
+            "pooled_top1_score": None,
+            "pooled_top2_person_id": None,
+            "pooled_top2_score": None,
+            "pooled_score_margin": None,
+            "pooled_ranking_consistent": None,
+            "top1_vote_windows": 0,
+            "top1_vote_fraction": 0.0,
         }
     if embeddings.size == 0:
         return {
@@ -276,6 +334,15 @@ def match_label(
             "notes": ["没有通过质量筛选的语音窗口"],
             "scores": {},
             "segment_votes": {},
+            "pooled_scores": {},
+            "pooled_top1_person_id": None,
+            "pooled_top1_score": None,
+            "pooled_top2_person_id": None,
+            "pooled_top2_score": None,
+            "pooled_score_margin": None,
+            "pooled_ranking_consistent": None,
+            "top1_vote_windows": 0,
+            "top1_vote_fraction": 0.0,
         }
 
     per_person: dict[str, list[float]] = {person_id: [] for person_id in people}
@@ -313,6 +380,10 @@ def match_label(
         top2_person_id, top2_score, margin = None, None, None
 
     usable_seconds = float(sum(item.duration for item in candidates))
+    pooled = pooled_voiceprint_scores(embeddings, weights, profiles, top_k)
+    pooled_consistent = pooled["top1_person_id"] == top1_person_id
+    top1_vote_windows = int(votes.get(top1_person_id, 0))
+    top1_vote_fraction = top1_vote_windows / len(candidates) if candidates else 0.0
     accepted_votes = sorted(
         ((person_id, count) for person_id, count in votes.items() if count),
         key=lambda item: item[1],
@@ -351,7 +422,17 @@ def match_label(
             >= margin_threshold + float(PIPELINE_CONFIG["high_confidence_margin_surplus"])
             and usable_seconds >= float(PIPELINE_CONFIG["high_confidence_seconds"])
         )
-        confidence = "高" if high else "中"
+        consensus_high = (
+            pooled_consistent
+            and top1_vote_fraction
+            >= float(PIPELINE_CONFIG["high_confidence_consensus_fraction"])
+            and margin is not None
+            and margin
+            >= margin_threshold
+            + float(PIPELINE_CONFIG["high_confidence_consensus_margin_surplus"])
+            and usable_seconds >= float(PIPELINE_CONFIG["high_confidence_seconds"])
+        )
+        confidence = "高" if high or consensus_high else "中"
     elif top1_score >= accept_threshold - float(PIPELINE_CONFIG["uncertain_score_tolerance"]):
         status = "near_threshold"
         confidence = "低"
@@ -365,6 +446,8 @@ def match_label(
         status = "unknown"
         confidence = "低"
         notes.append("第一名分数低于接受阈值")
+    if not pooled_consistent:
+        notes.append("多窗口聚合排序与保守分段排序不一致")
     return {
         "acoustic_status": status,
         "acoustic_confidence": confidence,
@@ -379,4 +462,13 @@ def match_label(
         "notes": notes,
         "scores": aggregate,
         "segment_votes": votes,
+        "pooled_scores": pooled["scores"],
+        "pooled_top1_person_id": pooled["top1_person_id"],
+        "pooled_top1_score": pooled["top1_score"],
+        "pooled_top2_person_id": pooled["top2_person_id"],
+        "pooled_top2_score": pooled["top2_score"],
+        "pooled_score_margin": pooled["score_margin"],
+        "pooled_ranking_consistent": pooled_consistent,
+        "top1_vote_windows": top1_vote_windows,
+        "top1_vote_fraction": top1_vote_fraction,
     }

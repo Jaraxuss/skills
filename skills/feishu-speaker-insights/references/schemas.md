@@ -112,7 +112,7 @@ Create one item only when its timestamp and excerpt can be checked in the transc
 }
 ```
 
-允许的强度：`strong`、`medium`、`weak`。语义类型：`self_identification`、`direct_address_response`、`explicit_address`、`role_semantics`、`third_party_reference`。转写标签与候选人姓名完全一致时，引擎还会生成确定性的 `exact_named_label` 证据。
+允许的强度：`strong`、`medium`、`weak`。语义类型：`self_identification`、`direct_address_response`、`explicit_address`、`role_semantics`、`third_party_reference`。转写标签与候选人姓名完全一致时，引擎会生成确定性的 `exact_named_label` 身份提示；它在报告中单列为“转写标签身份线索”，不能冒充可独立验证的上下文证据。
 
 证据时间戳属于 `source_label`；`target_label` 是该证据所支持的待识别标签。
 

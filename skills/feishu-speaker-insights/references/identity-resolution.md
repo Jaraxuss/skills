@@ -6,9 +6,10 @@ Read this reference before extracting context evidence or explaining confidence.
 
 The acoustic stage owns Top-1, Top-2, similarity, thresholds, usable duration, segment votes, and mixed-speaker detection. Semantic analysis must not alter those values.
 
-Context extraction is limited to transcript-grounded identity clues:
+Transcript label hints and semantic context are separate evidence categories:
 
-- `exact_named_label`: the Feishu transcript label exactly equals a person in the current candidate cohort; generated deterministically and strong.
+- `exact_named_label`: the Feishu transcript label exactly equals a person in the current candidate cohort. It may participate in deterministic resolution but must be reported as a transcript-label hint, not as independent semantic context and not with an arbitrary first utterance presented as proof.
+- Semantic context is limited to transcript-grounded identity clues:
 - `self_identification`: explicit self-introduction by the target label; strong.
 - `direct_address_response`: a person is named and the target label responds immediately; normally strong when adjacent and within 20 seconds.
 - `explicit_address`: explicit naming that is not an immediate reply; medium or weak depending on ambiguity.
@@ -39,3 +40,4 @@ A context identity is `strong` only when its weighted evidence clearly exceeds a
 - When context conflicts, state both identities and preserve the voiceprint result.
 - A low confidence result is not an assertion that the person was absent.
 - Top-1 and Top-2 are always ranking evidence, including for unknown outcomes. Thresholds remain internal and require no user configuration.
+- User-facing summaries should lead with multi-window pooled similarity, supporting-window count, and candidate margin. Keep the conservative per-window score in the detailed audit report; neither metric is a probability.

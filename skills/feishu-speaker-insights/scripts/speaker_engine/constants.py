@@ -52,6 +52,8 @@ PIPELINE_CONFIG = {
     "default_margin_threshold": 0.10,
     "high_confidence_score_surplus": 0.08,
     "high_confidence_margin_surplus": 0.05,
+    "high_confidence_consensus_fraction": 0.70,
+    "high_confidence_consensus_margin_surplus": 0.15,
     "high_confidence_seconds": 12.0,
     "uncertain_score_tolerance": 0.03,
     "mixed_minority_fraction": 0.25,

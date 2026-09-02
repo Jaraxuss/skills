@@ -540,6 +540,17 @@ def public_report_payload(
         "json": f"{report_root}?format=json",
         "markdown": f"{report_root}?format=markdown",
     }
+    if report_format == "feishu":
+        payload["delivery_contract"] = {
+            "message_required": True,
+            "message_field": "message_markdown",
+            "markdown_attachment_required": True,
+            "markdown_attachment": {
+                "url": f"{report_root}?format=markdown",
+                "filename": "report.md",
+            },
+            "claim_sent_only_after_transport_success": True,
+        }
     return payload
 
 

@@ -93,7 +93,9 @@ queued → running/transcoding → running/extracting_embeddings
 
 字段细节见 [数据格式](schemas.md)。语义结果必须覆盖每个标签；校验失败后任务回到 `awaiting_semantic / semantic_revision_required`。
 
-完成后优先读取 `format=feishu` 并发送其中的 `message_markdown`。用户索要详情时再读取 `format=markdown`；`format=json` 是完整权威结果。不得由 Agent 重写声纹排序或另造报告规则。
+完成后读取 `format=feishu`。响应中的 `delivery_contract` 明确要求同一次最终交付包含两项：原样发送 `message_markdown`，以及下载并真实上传 `markdown_attachment`。调用方必须检查两项发送回执，附件未成功时不能声称“报告已发送”。`format=json` 是完整权威结果；不得由 Agent 重写声纹排序或另造报告规则。
+
+简报以多窗口聚合相似度、一致片段数和候选分差表达声纹证据；详细报告另保留用于判定的保守分段分数。两者都不是身份认证概率。
 
 人工纠正请求沿用语义工作流中的会话绑定字段和 `corrections` 数组，只生成版本化报告，返回 `voiceprint_changed: false`。
 

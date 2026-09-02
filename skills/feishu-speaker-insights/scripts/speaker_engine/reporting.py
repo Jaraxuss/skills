@@ -110,17 +110,26 @@ def build_feishu_summary(
                         "person_id": row.get("top1_person_id"),
                         "name": person_name(row.get("top1_person_id"), people),
                         "score": row.get("top1_score"),
+                        "pooled_score": (row.get("pooled_scores") or {}).get(
+                            row.get("top1_person_id")
+                        ),
                     },
                     "top2": {
                         "person_id": row.get("top2_person_id"),
                         "name": person_name(row.get("top2_person_id"), people),
                         "score": row.get("top2_score"),
+                        "pooled_score": (row.get("pooled_scores") or {}).get(
+                            row.get("top2_person_id")
+                        ),
                     },
                     "score_margin": row.get("score_margin"),
                     "usable_windows": row.get("usable_windows"),
                     "usable_seconds": row.get("usable_seconds"),
                     "needs_review": bool(row.get("needs_review")),
                     "voice_context_conflict": bool(row.get("voice_context_conflict")),
+                    "support_windows": int(row.get("top1_vote_windows") or 0),
+                    "support_fraction": float(row.get("top1_vote_fraction") or 0.0),
+                    "pooled_ranking_consistent": row.get("pooled_ranking_consistent"),
                 }
             )
             if row.get("needs_review") or row.get("voice_context_conflict") or row.get("final_status") in {
@@ -168,10 +177,32 @@ def build_feishu_summary(
         for match in matches:
             first = match["top1"]
             second = match["top2"]
-            ranking = f"{first['name']} {score(first['score'])}"
+            first_display = (
+                first.get("pooled_score")
+                if first.get("pooled_score") is not None
+                else first.get("score")
+            )
+            second_display = (
+                second.get("pooled_score")
+                if second.get("pooled_score") is not None
+                else second.get("score")
+            )
+            ranking = f"第一候选 {first['name']}，聚合相似度 {score(first_display)}"
             if second["person_id"] is not None:
-                ranking += f"；{second['name']} {score(second['score'])}"
-            message_lines.append(f"声纹排序（{match['transcript_label']}）：{ranking}")
+                ranking += f"；第二候选 {second['name']} {score(second_display)}"
+            support = (
+                f"；{match['support_windows']}/{match['usable_windows']} 个片段一致"
+                if match["usable_windows"] and "top1_vote_windows" in row
+                else ""
+            )
+            lead = (
+                f"；保守分段领先 {score(match['score_margin'])}"
+                if match.get("score_margin") is not None
+                else ""
+            )
+            message_lines.append(
+                f"声纹排序与证据（{match['transcript_label']}）：{ranking}{support}{lead}"
+            )
         if viewpoints:
             message_lines.append("核心观点：")
             for index, item in enumerate(viewpoints, start=1):
@@ -193,7 +224,28 @@ def build_feishu_summary(
         "speakers": speakers,
         "warnings": warnings,
         "message_markdown": "\n".join(message_lines).strip(),
+        "score_note": "聚合相似度描述多段语音的整体接近程度；身份判定仍受保守分段分数、候选分差和片段投票共同约束。",
     }
+
+
+def _context_description(item: dict[str, Any]) -> str:
+    source = str(item.get("source_label") or "未知标签")
+    target = str(item.get("target_label") or "未知标签")
+    person = str(item.get("supported_person") or "未知人员")
+    kind = str(item.get("type") or "")
+    if kind == "self_identification":
+        reason = f"{source}在原文中自我介绍，支持将{target}识别为{person}"
+    elif kind == "direct_address_response":
+        reason = f"{source}点名或提问后由{target}紧接回答，支持将回答者识别为{person}"
+    elif kind == "explicit_address":
+        reason = f"{source}对{target}使用明确称呼，支持将其识别为{person}"
+    elif kind == "third_party_reference":
+        reason = f"{source}明确描述{target}的身份，支持将其识别为{person}"
+    elif kind == "role_semantics":
+        reason = f"{target}的职责表述与{person}相符（仅作弱线索）"
+    else:
+        reason = f"该原文支持将{target}识别为{person}"
+    return reason
 
 
 def write_outputs(
@@ -209,6 +261,13 @@ def write_outputs(
 ) -> dict[str, str]:
     people = {item["person_id"]: item for item in bundle["candidate_people"]}
     grouped = group_viewpoints(resolved, validated_viewpoints, non_substantive_labels)
+    label_hints = [
+        item
+        for item in validated_context
+        if item.get("evidence_category") == "transcript_label_hint"
+        or item.get("type") == "exact_named_label"
+    ]
+    semantic_context = [item for item in validated_context if item not in label_hints]
     payload = {
         "schema_version": 1,
         "run_id": bundle["run_id"],
@@ -220,6 +279,8 @@ def write_outputs(
         "results": resolved,
         "context": {
             "validated": validated_context,
+            "transcript_label_hints": label_hints,
+            "semantic_evidence": semantic_context,
             "rejected": rejected_context,
         },
         "viewpoints": {
@@ -250,13 +311,21 @@ def write_outputs(
                 "声纹置信等级": row["acoustic_confidence"],
                 "第一名": person_name(row.get("top1_person_id"), people),
                 "第一名相似度": row.get("top1_score"),
+                "第一名聚合相似度": (row.get("pooled_scores") or {}).get(
+                    row.get("top1_person_id"), row.get("top1_score")
+                ),
                 "接受阈值": bundle["calibration"]["accept_threshold"],
                 "第二名": person_name(row.get("top2_person_id"), people),
                 "第二名相似度": row.get("top2_score"),
+                "第二名聚合相似度": (row.get("pooled_scores") or {}).get(
+                    row.get("top2_person_id"), row.get("top2_score")
+                ),
                 "分差": row.get("score_margin"),
                 "分差阈值": bundle["calibration"]["margin_threshold"],
                 "有效片段数": row["usable_windows"],
                 "有效语音秒数": row["usable_seconds"],
+                "一致片段数": row.get("top1_vote_windows"),
+                "一致片段比例": row.get("top1_vote_fraction"),
                 "上下文支持": row.get("context_person") or "",
                 "上下文强度": row.get("context_strength"),
                 "声纹上下文冲突": row.get("voice_context_conflict"),
@@ -271,19 +340,19 @@ def write_outputs(
     lines = [
         "# 声纹匹配与核心观点报告",
         "",
-        "> 相似度是本次候选集中的声纹证据，不是身份认证概率；上下文不能覆盖声纹分数。",
+        "> 聚合相似度是多段语音的总体声纹证据，不是身份认证概率；最终判定仍综合保守分段分数、候选分差和片段一致性，上下文不能覆盖声纹。",
         "",
         "## 会议与校准",
         "",
         f"- 客户：{bundle['customer']['name']}（`{bundle['customer']['id']}`）",
         f"- 录音：{bundle['meeting']['title']}（`{bundle['meeting']['id']}`）",
         f"- 模型：`{bundle['model']['id']}@{bundle['model']['revision']}`，CPU，192 维。",
-        f"- 内部自动判定阈值（无需用户配置）：相似度 `{calibration['accept_threshold']:.4f}`；分差 `{calibration['margin_threshold']:.4f}`；来源：`{calibration['source']}`。",
+        f"- 内部自动判定阈值（无需用户配置）：保守分段分数 `{calibration['accept_threshold']:.4f}`；分差 `{calibration['margin_threshold']:.4f}`；来源：`{calibration['source']}`。",
         "",
         "## 说话人匹配",
         "",
-        "| 原标签 | 最终状态 | 最终身份 | 置信 | 第一名 / 相似度 | 第二名 / 相似度 | 分差 | 有效语音 | 上下文 | 复核 |",
-        "|---|---|---|---|---|---|---:|---:|---|---|",
+        "| 原标签 | 最终状态 | 最终身份 | 置信 | 第一候选 / 聚合相似度 | 第二候选 / 聚合相似度 | 一致片段 | 保守分段分数 / 分差 | 有效语音 | 上下文 | 复核 |",
+        "|---|---|---|---|---|---|---:|---|---:|---|---|",
     ]
     for row in resolved:
         context_text = (
@@ -299,9 +368,10 @@ def write_outputs(
                     escape(row["final_status"]),
                     escape(row["final_identity"]),
                     escape(row["final_confidence"]),
-                    f"{escape(person_name(row.get('top1_person_id'), people))} / {score(row.get('top1_score'))}",
-                    f"{escape(person_name(row.get('top2_person_id'), people))} / {score(row.get('top2_score'))}",
-                    score(row.get("score_margin")),
+                    f"{escape(person_name(row.get('top1_person_id'), people))} / {score((row.get('pooled_scores') or {}).get(row.get('top1_person_id'), row.get('top1_score')))}",
+                    f"{escape(person_name(row.get('top2_person_id'), people))} / {score((row.get('pooled_scores') or {}).get(row.get('top2_person_id'), row.get('top2_score')))}",
+                    f"{int(row.get('top1_vote_windows') or 0)} / {row['usable_windows']}",
+                    f"{score(row.get('top1_score'))} / {score(row.get('score_margin'))}",
                     f"{row['usable_windows']} 段 / {row['usable_seconds']:.1f} 秒",
                     escape(context_text),
                     "是" if row.get("needs_review") else "否",
@@ -310,15 +380,26 @@ def write_outputs(
             + " |"
         )
 
-    lines.extend(["", "## 可审计上下文证据", ""])
-    if validated_context:
-        for item in validated_context:
+    lines.extend(["", "## 转写标签身份线索", ""])
+    if label_hints:
+        for item in label_hints:
             lines.append(
-                f"- `{item['timestamp']}` {item['target_label']} → {item['supported_person']} "
-                f"（{item['strength']} / `{item['type']}`）：{item['excerpt']}"
+                f"- 飞书标签 `{item['target_label']}` 与候选人员“{item['supported_person']}”精确一致；"
+                "这是标签身份提示，不是独立的语义身份证据。"
             )
     else:
-        lines.append("- 未提供或未验证通过上下文身份线索。")
+        lines.append("- 没有实名标签与候选人员精确对应。")
+
+    lines.extend(["", "## 可审计上下文身份证据", ""])
+    if semantic_context:
+        for item in semantic_context:
+            lines.append(
+                f"- `{item['timestamp']}` **{_context_description(item)}** "
+                f"（{item['strength']} / `{item['type']}`）\n"
+                f"  - 原文（{item['source_label']}）：{item['excerpt']}"
+            )
+    else:
+        lines.append("- 本次没有额外且可独立验证的上下文身份证据；身份主要依据声纹及转写标签线索。")
     if rejected_context:
         lines.append(f"- 有 {len(rejected_context)} 条上下文线索因无法回查原文而被排除。")
 

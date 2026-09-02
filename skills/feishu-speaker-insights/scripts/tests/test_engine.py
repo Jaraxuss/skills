@@ -15,7 +15,7 @@ SCRIPTS = Path(__file__).resolve().parents[1]
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-from speaker_engine.matching import calibrate_profiles
+from speaker_engine.matching import calibrate_profiles, match_label
 from speaker_engine.resolution import (
     deterministic_named_label_context,
     ensure_viewpoint_coverage,
@@ -393,6 +393,47 @@ class StorageTests(unittest.TestCase):
 
 
 class CalibrationAndResolutionTests(unittest.TestCase):
+    def test_multi_window_pooling_and_consensus_can_raise_confidence_safely(self) -> None:
+        query = np.zeros(192, dtype=np.float32)
+        query[0] = 1.0
+        reference = np.zeros(192, dtype=np.float32)
+        reference[0] = 0.60
+        reference[2] = 0.80
+        other = np.zeros(192, dtype=np.float32)
+        other[1] = 1.0
+        profiles = {
+            "p1": {"arrays": {"references": np.stack([reference] * 4)}},
+            "p2": {"arrays": {"references": np.stack([other] * 4)}},
+        }
+        candidates = [
+            Candidate(
+                label="说话人 1",
+                utterance_index=index,
+                start=float(index * 4),
+                end=float(index * 4 + 4),
+                timestamp=f"00:{index * 4:02d}",
+                text="测试发言",
+                duration=4.0,
+                rms_dbfs=-20.0,
+                voiced_fraction=0.9,
+                clipping_ratio=0.0,
+                quality=0.9,
+            )
+            for index in range(4)
+        ]
+        result = match_label(
+            candidates,
+            np.stack([query] * 4),
+            profiles,
+            {"accept_threshold": 0.55, "margin_threshold": 0.10},
+        )
+        self.assertEqual(result["matched_person_id"], "p1")
+        self.assertEqual(result["acoustic_confidence"], "高")
+        self.assertAlmostEqual(result["pooled_top1_score"], 0.60, places=4)
+        self.assertEqual(result["top1_vote_windows"], 4)
+        self.assertEqual(result["top1_vote_fraction"], 1.0)
+        self.assertTrue(result["pooled_ranking_consistent"])
+
     def test_dynamic_calibration(self) -> None:
         profiles = {
             "p1": {"arrays": profile_arrays(1, 0)},
@@ -507,6 +548,7 @@ class CalibrationAndResolutionTests(unittest.TestCase):
         self.assertEqual(len(evidence), 1)
         self.assertEqual(evidence[0]["strength"], "strong")
         self.assertEqual(evidence[0]["supported_person_id"], "p1")
+        self.assertEqual(evidence[0]["evidence_category"], "transcript_label_hint")
 
     def test_explicit_outside_cohort_identity_can_resolve(self) -> None:
         index = {

@@ -715,7 +715,10 @@ def analyze_finalize(
                 "usable_seconds": row["usable_seconds"],
                 "voiceprint": {
                     "top1_score": row["top1_score"],
+                    "pooled_top1_score": row.get("pooled_top1_score"),
                     "score_margin": row["score_margin"],
+                    "top1_vote_windows": row.get("top1_vote_windows"),
+                    "top1_vote_fraction": row.get("top1_vote_fraction"),
                     "accept_threshold": bundle["calibration"]["accept_threshold"],
                     "margin_threshold": bundle["calibration"]["margin_threshold"],
                     "confidence": row["acoustic_confidence"],

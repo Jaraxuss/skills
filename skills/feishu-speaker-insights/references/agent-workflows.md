@@ -37,9 +37,9 @@ API 地址优先来自 `FEISHU_SPEAKER_API_URL`。没有直接 HTTP 能力时，
    - 可回查的上下文身份证据；
    - 覆盖每个 `required_labels` 的核心观点、发言摘要或有依据的非实质分类。
 4. 提交 `/semantic-result`。若返回 `semantic_revision_required`，按 `details` 修复同一任务，不新建任务。
-5. 完成后读取 `/report?format=feishu`，原样发送 `message_markdown`。用户需要完整内容时再读取 `format=markdown`；结构化处理使用 `format=json`。
+5. 完成后读取 `/report?format=feishu`，在同一次最终交付中原样发送 `message_markdown`，并下载、上传 `delivery_contract.markdown_attachment` 指向的 Markdown 报告。必须分别检查消息与文件发送工具的成功回执；只有两者都成功时才能说“报告已发送”。附件失败时仍发送简报，并明确说明附件未发成功及可重试，不能用口头描述代替文件发送。结构化处理使用 `format=json`。
 
-不要让 OpenClaw 自行改变 Top-1/Top-2、相似度、身份状态或消息模板。报告中的相似度是候选集声纹证据，不是认证概率。
+不要让 OpenClaw 自行改变 Top-1/Top-2、相似度、身份状态或消息模板。简报使用多窗口聚合相似度、一致片段数和候选分差；详细报告保留保守分段分数。两种相似度都是候选集声纹证据，不是认证概率。
 
 ## 纠正与扩充分离
 

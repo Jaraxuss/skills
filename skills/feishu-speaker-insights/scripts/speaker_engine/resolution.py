@@ -119,6 +119,7 @@ def validate_context(
                     "timestamp": timestamp,
                     "excerpt": excerpt,
                     "source_utterance_index": grounding["index"],
+                    "evidence_category": "semantic_context",
                 }
             )
         except Exception as exc:
@@ -150,6 +151,7 @@ def deterministic_named_label_context(
                 "excerpt": grounding["text"],
                 "source_utterance_index": grounding["index"],
                 "generated_by": "deterministic_named_label",
+                "evidence_category": "transcript_label_hint",
             }
         )
     return evidence
