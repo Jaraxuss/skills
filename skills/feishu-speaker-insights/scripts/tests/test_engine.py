@@ -293,6 +293,91 @@ class StorageTests(unittest.TestCase):
         listed = self.store.list_candidates("a")
         self.assertEqual(listed[0]["status"], "promoted")
 
+    def test_large_legacy_profile_without_provenance_can_be_promoted(self) -> None:
+        person = self.store.upsert_manifest(manifest("a", "客户A"))["客户甲"]
+        rng = np.random.default_rng(19)
+        center = np.zeros(192, dtype=np.float32)
+        center[0] = 1.0
+        references = np.stack(
+            [unit(center + rng.normal(0, 0.01, 192)) for _ in range(49)]
+        )
+        heldouts = np.stack(
+            [unit(center + rng.normal(0, 0.01, 192)) for _ in range(16)]
+        )
+        self.store.save_profile(
+            person,
+            {
+                "references": references,
+                "heldouts": heldouts,
+                "center": unit(references.mean(axis=0)),
+                "quality_weights": np.ones(len(references), dtype=np.float32),
+            },
+            {"model": {"id": "legacy"}, "sources": []},
+        )
+        current = self.store.load_profile(person["person_id"])
+        provenance = self.store._profile_provenance(current)
+        self.assertEqual(len(provenance["references"]), 49)
+        self.assertEqual(len(provenance["heldouts"]), 16)
+        self.assertTrue(
+            all(
+                item["provenance_status"] == "legacy_source_unavailable"
+                for item in provenance["references"] + provenance["heldouts"]
+            )
+        )
+
+        vectors = np.stack(
+            [unit(current["arrays"]["center"] + rng.normal(0, 0.01, 192)) for _ in range(24)]
+        )
+        windows = [
+            {
+                "source_id": "source-new",
+                "label": "说话人 1",
+                "utterance_index": index,
+                "start": float(index * 2),
+                "end": float(index * 2 + 2),
+                "timestamp": f"00:{index * 2:02d}",
+                "text": f"新候选发言 {index}",
+                "duration": 2.0,
+                "quality": 0.9,
+            }
+            for index in range(24)
+        ]
+        self.store.save_candidate(
+            "a",
+            person["person_id"],
+            "run-legacy",
+            "candidate-legacy",
+            vectors,
+            {
+                "predicted_identity": "客户甲",
+                "usable_seconds": 48.0,
+                "voiceprint": {"accept_threshold": 0.58},
+                "windows": windows,
+                "source": {},
+            },
+        )
+        result = promote_candidate(
+            self.root / "customers" / "a" / "candidates" / "candidate-legacy.json",
+            person["person_id"],
+            "测试确认人",
+            self.store,
+        )
+        self.assertEqual(result["profile"]["version"], 2)
+        promoted = self.store.load_profile(person["person_id"])
+        promoted_provenance = promoted["manifest"]["vector_provenance"]
+        self.assertEqual(
+            len(promoted_provenance["references"]),
+            len(promoted["arrays"]["references"]),
+        )
+        self.assertEqual(
+            len(promoted_provenance["heldouts"]),
+            len(promoted["arrays"]["heldouts"]),
+        )
+        compatibility = promoted["manifest"]["compatibility"]["legacy_source_provenance"]
+        self.assertEqual(compatibility["base_version"], 1)
+        self.assertEqual(compatibility["reference_placeholders"], 49)
+        self.assertEqual(compatibility["holdout_placeholders"], 16)
+
 
 class CalibrationAndResolutionTests(unittest.TestCase):
     def test_dynamic_calibration(self) -> None:

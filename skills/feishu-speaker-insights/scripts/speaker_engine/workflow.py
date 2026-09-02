@@ -766,6 +766,14 @@ def promote_candidate(
     old_refs = current["arrays"]["references"]
     old_heldouts = current["arrays"]["heldouts"]
     old_provenance = store._profile_provenance(current)
+    legacy_reference_count = sum(
+        item.get("provenance_status") == "legacy_source_unavailable"
+        for item in old_provenance["references"]
+    )
+    legacy_holdout_count = sum(
+        item.get("provenance_status") == "legacy_source_unavailable"
+        for item in old_provenance["heldouts"]
+    )
     candidate_windows = list(candidate.get("windows") or [])
     kept_windows = [
         candidate_windows[int(index)] if int(index) < len(candidate_windows) else {}
@@ -867,6 +875,16 @@ def promote_candidate(
     }
     if confirmed_by:
         profile_manifest["promotion"]["confirmed_by"] = confirmed_by
+    if legacy_reference_count or legacy_holdout_count:
+        profile_manifest["compatibility"] = {
+            "legacy_source_provenance": {
+                "status": "partially_unavailable",
+                "base_version": int(current["version"]),
+                "reference_placeholders": int(legacy_reference_count),
+                "holdout_placeholders": int(legacy_holdout_count),
+                "note": "历史版本未保存逐向量来源；保留原向量并使用不可试听占位元数据对齐。",
+            }
+        }
     saved = store.save_profile(
         person,
         {

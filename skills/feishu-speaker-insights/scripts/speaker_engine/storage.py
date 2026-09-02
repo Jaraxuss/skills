@@ -1206,8 +1206,27 @@ class DataStore:
             source_map.setdefault(self._window_key(item), []).append(item)
         output: dict[str, list[dict[str, Any]]] = {"references": [], "heldouts": []}
         for kind in ("references", "heldouts"):
-            for index, item in enumerate(raw[kind]):
+            arrays = profile.get("arrays") if isinstance(profile.get("arrays"), dict) else {}
+            expected_count = len(np.asarray(arrays.get(kind, [])))
+            for index in range(expected_count):
+                item = raw[kind][index] if index < len(raw[kind]) else None
                 if not isinstance(item, dict):
+                    prefix = "ref" if kind == "references" else "holdout"
+                    output[kind].append(
+                        {
+                            "window_id": f"legacy-v{int(profile.get('version') or 0):04d}-{prefix}-{index:04d}",
+                            "array_kind": kind,
+                            "array_index": index,
+                            "label": "历史声纹",
+                            "utterance_index": index,
+                            "timestamp": "",
+                            "text": "",
+                            "duration": 0.0,
+                            "playable": False,
+                            "provenance_status": "legacy_source_unavailable",
+                            "legacy_profile_version": int(profile.get("version") or 0),
+                        }
+                    )
                     continue
                 matches = source_map.get(self._window_key(item)) or []
                 source = matches.pop(0) if matches else {}

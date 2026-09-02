@@ -239,6 +239,11 @@ class ReviewFixture(unittest.TestCase):
         self.assertEqual(versions[0]["parent_version"], 1)
         self.assertEqual(versions[0]["review_session_id"], created["session_id"])
 
+    def test_legacy_profile_revision_reports_missing_auditable_sources(self) -> None:
+        self.store.save_profile(self.person, arrays(1), {"model": {"id": "legacy"}})
+        with self.assertRaisesRegex(ValueError, "缺少可回查的窗口来源"):
+            create_profile_revision_review(self.person["person_id"], 1, self.store)
+
     def test_staff_profile_revision_uses_hidden_shared_review_owner(self) -> None:
         raw = manifest(self.audio, self.transcript)
         raw["attendees"].append({"name": "图南", "role": "CSM", "organization": "yingdao"})

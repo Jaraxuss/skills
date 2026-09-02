@@ -401,6 +401,14 @@ def create_profile_revision_review(
     windows = provenance["references"] + provenance["heldouts"]
     if not windows:
         raise ValueError("该历史版本没有可审核的窗口来源，不能创建新版")
+    if not any(
+        item.get("provenance_status") != "legacy_source_unavailable"
+        for item in windows
+    ):
+        raise ValueError(
+            "该历史版本缺少可回查的窗口来源，不能创建版本修订；"
+            "仍可用于声纹识别和经审核的候选扩充"
+        )
 
     owner = _profile_revision_customer(store, person)
     customer_id = str(owner["customer_id"])
