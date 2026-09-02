@@ -16,6 +16,7 @@ from speaker_engine.review import (
     cleanup_review_artifacts,
     commit_review_session,
     create_enrollment_review,
+    create_profile_revision_review,
     create_profile_review,
     restart_cancelled_enrollment_review,
     run_next_review_job,
@@ -162,7 +163,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Grounded viewpoints covering every label, with explicit background exceptions",
     )
 
-    profile = commands.add_parser("profile", help="Review, promote, or roll back profiles")
+    profile = commands.add_parser("profile", help="Review, version, enable, or disable profiles")
     profile_commands = profile.add_subparsers(dest="profile_command", required=True)
     candidates = profile_commands.add_parser("candidates")
     candidates.add_argument("--customer", required=True)
@@ -177,9 +178,27 @@ def build_parser() -> argparse.ArgumentParser:
     quarantine = profile_commands.add_parser("quarantine")
     quarantine.add_argument("--person", required=True)
     quarantine.add_argument("--confirmed-by", required=True)
+    versions = profile_commands.add_parser("versions")
+    versions.add_argument("--person", required=True)
+    set_current = profile_commands.add_parser("set-current")
+    set_current.add_argument("--person", required=True)
+    set_current.add_argument("--version", type=int, required=True)
+    disable = profile_commands.add_parser("disable")
+    disable.add_argument("--person", required=True)
+    enable = profile_commands.add_parser("enable")
+    enable.add_argument("--person", required=True)
+    fork = profile_commands.add_parser("fork")
+    fork.add_argument("--person", required=True)
+    fork.add_argument("--base-version", type=int, required=True)
+    fork.add_argument("--window-ids", type=Path, help="Optional JSON array of retained window IDs")
+    fork.add_argument("--keep-current", action="store_true", help="Create the new version without making it current")
     profile_review_create = profile_commands.add_parser("review-create")
     profile_review_create.add_argument("--candidate", type=Path, required=True)
     profile_review_create.add_argument("--base-url")
+    revision_review_create = profile_commands.add_parser("revision-review-create")
+    revision_review_create.add_argument("--person", required=True)
+    revision_review_create.add_argument("--base-version", type=int, required=True)
+    revision_review_create.add_argument("--base-url")
 
     review = commands.add_parser("review", help="Run or inspect the browser enrollment review service")
     review_commands = review.add_subparsers(dest="review_command", required=True)
@@ -259,8 +278,35 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
         return {"status": "rolled_back", **store.rollback_profile(args.person, args.to_version)}
     if args.command == "profile" and args.profile_command == "quarantine":
         return store.quarantine_profile(args.person, args.confirmed_by)
+    if args.command == "profile" and args.profile_command == "versions":
+        return {"person": store.get_person(args.person), "versions": store.list_profile_versions(args.person)}
+    if args.command == "profile" and args.profile_command == "set-current":
+        return store.set_current_profile_version(args.person, args.version)
+    if args.command == "profile" and args.profile_command == "disable":
+        return store.set_profile_enabled(args.person, False)
+    if args.command == "profile" and args.profile_command == "enable":
+        return store.set_profile_enabled(args.person, True)
+    if args.command == "profile" and args.profile_command == "fork":
+        window_ids = None
+        if args.window_ids:
+            window_ids = json.loads(args.window_ids.read_text(encoding="utf-8-sig"))
+            if not isinstance(window_ids, list):
+                raise ValueError("--window-ids must contain a JSON array")
+        return store.fork_profile_version(
+            args.person,
+            args.base_version,
+            [str(item) for item in window_ids] if window_ids is not None else None,
+            make_current=not args.keep_current,
+        )
     if args.command == "profile" and args.profile_command == "review-create":
         return create_profile_review(args.candidate, store, base_url=args.base_url)
+    if args.command == "profile" and args.profile_command == "revision-review-create":
+        return create_profile_revision_review(
+            args.person,
+            args.base_version,
+            store,
+            base_url=args.base_url,
+        )
     if args.command == "review" and args.review_command == "work-once":
         result = run_next_review_job(store, download=args.download)
         cleanup_review_artifacts(store)

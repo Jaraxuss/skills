@@ -58,6 +58,43 @@ def profile_arrays(seed: int, center_axis: int) -> dict[str, np.ndarray]:
     }
 
 
+def profile_manifest_with_windows() -> dict:
+    windows = []
+    for index in range(11):
+        start = float(index * 2)
+        windows.append(
+            {
+                "label": "说话人 1",
+                "utterance_index": index,
+                "start": start,
+                "end": start + 2.0,
+                "timestamp": f"00:{index * 2:02d}",
+                "text": f"测试发言 {index}",
+                "duration": 2.0,
+                "rms_dbfs": -20.0,
+                "voiced_fraction": 0.9,
+                "clipping_ratio": 0.0,
+                "quality": 0.9,
+                "source_id": "source-1",
+                "meeting_title": "测试会议",
+            }
+        )
+    return {
+        "model": {"id": "test"},
+        "creation_mode": "enrollment",
+        "sources": [{"source_id": "source-1", "meeting_id": "m1", "title": "测试会议"}],
+        "registration": {"source_recordings": [{"source_id": "source-1", "meeting_id": "m1", "title": "测试会议"}], "source_windows": windows},
+        "statistics": {
+            "reference_count": 8,
+            "holdout_count": 3,
+            "reference_seconds": 16.0,
+            "holdout_seconds": 6.0,
+            "reference_windows": windows[:8],
+            "holdout_windows": windows[8:],
+        },
+    }
+
+
 def manifest(customer_id: str, customer_name: str, audio: str = "/tmp/a.wav", transcript: str = "/tmp/a.txt") -> dict:
     return {
         "schema_version": 1,
@@ -169,6 +206,60 @@ class StorageTests(unittest.TestCase):
         result = self.store.rollback_profile(person["person_id"])
         self.assertEqual(result["to_version"], 1)
         self.assertEqual(self.store.get_person(person["person_id"])["current_version"], 1)
+
+    def test_disable_preserves_current_version_and_matching_excludes_profile(self) -> None:
+        person = self.store.upsert_manifest(manifest("a", "客户A"))["客户甲"]
+        self.store.save_profile(person, profile_arrays(1, 0), profile_manifest_with_windows())
+        result = self.store.set_profile_enabled(person["person_id"], False)
+        self.assertEqual(result["status"], "disabled")
+        disabled = self.store.get_person(person["person_id"])
+        self.assertEqual(disabled["current_version"], 1)
+        self.assertEqual(disabled["voiceprint_enabled"], 0)
+        selected = self.store.analysis_profiles("a", manifest("a", "客户A")["attendees"], [])
+        self.assertNotIn(person["person_id"], selected)
+        self.store.set_profile_enabled(person["person_id"], True)
+        selected = self.store.analysis_profiles("a", manifest("a", "客户A")["attendees"], [])
+        self.assertIn(person["person_id"], selected)
+
+    def test_switch_then_fork_allocates_after_highest_immutable_version(self) -> None:
+        person = self.store.upsert_manifest(manifest("a", "客户A"))["客户甲"]
+        base_manifest = profile_manifest_with_windows()
+        self.store.save_profile(person, profile_arrays(1, 0), base_manifest)
+        self.store.save_profile(self.store.get_person(person["person_id"]), profile_arrays(2, 0), {**base_manifest, "parent_version": 1})
+        self.store.save_profile(self.store.get_person(person["person_id"]), profile_arrays(3, 0), {**base_manifest, "parent_version": 2})
+        switched = self.store.set_current_profile_version(person["person_id"], 1)
+        self.assertEqual(switched["to_version"], 1)
+        detail = self.store.profile_version_detail(person["person_id"], 1)
+        forked = self.store.fork_profile_version(
+            person["person_id"],
+            1,
+            [item["window_id"] for item in detail["windows"]],
+            make_current=True,
+        )
+        self.assertEqual(forked["new_version"], 4)
+        self.assertEqual(self.store.get_person(person["person_id"])["current_version"], 4)
+        versions = self.store.list_profile_versions(person["person_id"])
+        self.assertEqual([item["version"] for item in versions], [4, 3, 2, 1])
+        self.assertEqual(versions[0]["parent_version"], 1)
+        self.assertTrue(self.store.load_profile(person["person_id"], 2)["npz_path"].is_file())
+        self.assertTrue(self.store.load_profile(person["person_id"], 3)["npz_path"].is_file())
+
+    def test_profile_catalogue_is_paginated_and_filters_scope(self) -> None:
+        people_a = self.store.upsert_manifest(manifest("a", "客户A"))
+        people_b = self.store.upsert_manifest(manifest("b", "客户B"))
+        self.store.save_profile(people_a["客户甲"], profile_arrays(1, 0), profile_manifest_with_windows())
+        self.store.save_profile(people_b["客户甲"], profile_arrays(2, 1), profile_manifest_with_windows())
+        self.store.save_profile(people_a["内部CSM"], profile_arrays(3, 2), profile_manifest_with_windows())
+        first_page = self.store.list_profiles(page=1, page_size=2)
+        self.assertEqual(first_page["total"], 3)
+        self.assertEqual(len(first_page["items"]), 2)
+        self.assertEqual(first_page["pages"], 2)
+        staff = self.store.list_profiles(scope="staff")
+        self.assertEqual(staff["total"], 1)
+        self.assertEqual(staff["items"][0]["name"], "内部CSM")
+        customer = self.store.list_profiles(customer_id="a")
+        self.assertEqual(customer["total"], 1)
+        self.assertEqual(customer["items"][0]["customer_name"], "客户A")
 
     def test_candidate_requires_explicit_promotion(self) -> None:
         person = self.store.upsert_manifest(manifest("a", "客户A"))["客户甲"]

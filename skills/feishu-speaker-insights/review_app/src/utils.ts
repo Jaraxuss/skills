@@ -29,7 +29,8 @@ export function assignmentValue(value: Assignment | undefined) {
 }
 
 export function personText(person: Pick<Person, 'name' | 'role'>) {
-  return `${person.name}${person.role ? `（${person.role}）` : ''}`
+  const role = person.role?.trim()
+  return `${person.name}${role && role !== person.name.trim() ? `（${role}）` : ''}`
 }
 
 export function organizationText(organization?: string) {

@@ -157,8 +157,14 @@ speaker_insights.py analyze acoustic --manifest MEETING.yaml
 speaker_insights.py analyze finalize --run-dir RUN_DIR --context context.json --viewpoints viewpoints.json
 speaker_insights.py profile candidates --customer CUSTOMER_ID
 speaker_insights.py profile promote --candidate CANDIDATE_JSON --person PERSON_ID --confirmed-by NAME
-speaker_insights.py profile rollback --person PERSON_ID [--customer CUSTOMER_ID] [--to-version 1]
-speaker_insights.py profile quarantine --person PERSON_ID --confirmed-by NAME
+speaker_insights.py profile versions --person PERSON_ID
+speaker_insights.py profile set-current --person PERSON_ID --version 1
+speaker_insights.py profile disable --person PERSON_ID
+speaker_insights.py profile enable --person PERSON_ID
+speaker_insights.py profile fork --person PERSON_ID --base-version 1 [--window-ids retained.json] [--keep-current]
+speaker_insights.py profile revision-review-create --person PERSON_ID --base-version 1 [--base-url URL]
+
+旧的 `profile rollback` 和 `profile quarantine` 仅保留为兼容入口；新流程使用“设为当前版本”和“停用”，不会删除历史版本或清空当前版本指针。
 speaker_insights.py enroll review-create --manifest MEETING.yaml [--base-url URL]
 speaker_insights.py enroll review-status --session SESSION_ID
 speaker_insights.py enroll review-cancel --session SESSION_ID

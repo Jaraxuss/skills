@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import tempfile
@@ -320,6 +321,265 @@ def create_profile_review(
     store.set_review_session(session_id, status="review_required", package_path=package_path, event_type="profile_review_prepared")
     review_url = f"{base_url.rstrip('/')}/sessions/{session_id}" if base_url else None
     return {"session_id": session_id, "status": "review_required", "review_url": review_url}
+
+
+def _profile_revision_customer(store: DataStore, person: dict[str, Any]) -> dict[str, Any]:
+    if person.get("scope") == "customer" and person.get("customer_id"):
+        return store.get_customer(str(person["customer_id"]))
+    return store.ensure_shared_review_customer()
+
+
+def _profile_revision_sources(
+    store: DataStore,
+    person: dict[str, Any],
+    manifest: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Resolve optional playback paths without exposing them to the browser."""
+    registration = manifest.get("registration") if isinstance(manifest.get("registration"), dict) else {}
+    raw_sources = [
+        item
+        for item in list(registration.get("source_recordings") or [])
+        + list(manifest.get("sources") or [])
+        if isinstance(item, dict)
+    ]
+    safe_sources = store._safe_sources(manifest)
+
+    def same_source(left: dict[str, Any], right: dict[str, Any]) -> bool:
+        for key in ("source_id", "meeting_id"):
+            if left.get(key) and right.get(key) and str(left[key]) == str(right[key]):
+                return True
+        return bool(left.get("title") and left.get("title") == right.get("title"))
+
+    values: list[dict[str, Any]] = []
+    for index, source in enumerate(safe_sources, start=1):
+        raw = next((item for item in raw_sources if same_source(source, item)), {})
+        value = {**source, "source_id": str(source.get("source_id") or f"source-{index}")}
+        source_customer_id = str(
+            source.get("customer_id") or raw.get("customer_id") or person.get("customer_id") or ""
+        )
+        if source_customer_id:
+            value["customer_id"] = source_customer_id
+        for kind in ("audio", "transcript"):
+            path: Path | None = None
+            raw_path = str(raw.get(f"{kind}_path") or "").strip()
+            if raw_path:
+                candidate = Path(raw_path).expanduser().resolve()
+                if candidate.is_file():
+                    path = candidate
+            relative = str(
+                source.get(f"{kind}_relative_path")
+                or raw.get(f"{kind}_relative_path")
+                or ""
+            ).strip()
+            if path is None and relative and source_customer_id and source_customer_id != "__shared_staff__":
+                with contextlib.suppress(Exception):
+                    root = store.customer_source_dir(source_customer_id).resolve()
+                    candidate = (root / relative).resolve()
+                    if root in candidate.parents and candidate.is_file():
+                        path = candidate
+            if path is not None:
+                expected = str(source.get(f"{kind}_sha256") or raw.get(f"{kind}_sha256") or "")
+                if not expected or sha256_file(path) == expected:
+                    value[f"{kind}_path"] = str(path)
+        value["playable"] = bool(value.get("audio_path"))
+        values.append(value)
+    return values
+
+
+def create_profile_revision_review(
+    person_id: str,
+    base_version: int,
+    store: DataStore,
+    *,
+    base_url: str | None = None,
+    expires_days: int = 7,
+) -> dict[str, Any]:
+    """Create an immediately reviewable task from one immutable profile version."""
+    base = store.load_profile(person_id, int(base_version))
+    person = base["person"]
+    provenance = store._profile_provenance(base)
+    windows = provenance["references"] + provenance["heldouts"]
+    if not windows:
+        raise ValueError("该历史版本没有可审核的窗口来源，不能创建新版")
+
+    owner = _profile_revision_customer(store, person)
+    customer_id = str(owner["customer_id"])
+    customer = json.loads(str(owner.get("metadata_json") or "{}"))
+    customer.update({"id": customer_id, "name": str(owner["name"])})
+    session_id = _session_id(f"revision-{person_id}-v{int(base_version):04d}")
+    session_dir = store.session_dir(customer_id, session_id)
+    base_npz_path = Path(base["npz_path"])
+    base_manifest_path = Path(base["manifest_path"])
+    base_npz_sha256 = sha256_file(base_npz_path)
+    base_manifest_sha256 = sha256_file(base_manifest_path)
+    display_title = f"{person['name']} · v{int(base_version):04d} 版本修订"
+    manifest = {
+        "schema_version": 1,
+        "kind": "profile_revision",
+        "display_title": display_title,
+        "customer": customer,
+        "meeting": {
+            "id": f"profile-{safe_component(person_id)}-v{int(base_version):04d}",
+            "title": display_title,
+        },
+        "attendees": [
+            {
+                "id": person_id,
+                "name": person["name"],
+                "role": person.get("role", ""),
+                "organization": person.get("organization", "yingdao"),
+            }
+        ],
+        "profile_revision": {
+            "person_id": person_id,
+            "base_version": int(base_version),
+        },
+    }
+    manifest_path = session_dir / "manifest.json"
+    atomic_write_json(manifest_path, manifest)
+    store.create_review_session(
+        customer_id,
+        session_id,
+        "profile_revision",
+        manifest_path,
+        base_npz_sha256,
+        base_manifest_sha256,
+        expires_days,
+    )
+
+    sources = _profile_revision_sources(store, person, base["manifest"])
+    source_by_id = {str(item["source_id"]): item for item in sources}
+    vectors: list[np.ndarray] = []
+    segments: list[dict[str, Any]] = []
+    grouped_segments: dict[tuple[str, str], list[str]] = defaultdict(list)
+    grouped_seconds: dict[tuple[str, str], float] = defaultdict(float)
+    for index, window in enumerate(windows):
+        source_id = str(window.get("source_id") or "source-unknown")
+        source = source_by_id.get(source_id)
+        if source is None:
+            source = {
+                "source_id": source_id,
+                "title": str(window.get("meeting_title") or "历史声纹素材"),
+                "playable": False,
+            }
+            sources.append(source)
+            source_by_id[source_id] = source
+        array_kind = str(window["array_kind"])
+        array_index = int(window["array_index"])
+        vectors.append(np.asarray(base["arrays"][array_kind][array_index], dtype=np.float32))
+        segment_id = f"seg-{safe_component(session_id)}-{index:04d}"
+        title = str(source.get("title") or window.get("meeting_title") or "历史声纹素材")
+        label = str(window.get("label") or "已入库片段")
+        duration = float(window.get("duration") or 0.0)
+        segments.append(
+            {
+                **window,
+                "segment_id": segment_id,
+                "source_window_id": str(window["window_id"]),
+                "vector_index": index,
+                "source_id": source_id,
+                "meeting_title": title,
+                "label": label,
+                "display_label": f"{title} · {label}",
+                "utterance_index": int(window.get("utterance_index") or array_index),
+                "timestamp": str(window.get("timestamp") or "00:00"),
+                "start": float(window.get("start") or 0.0),
+                "end": float(window.get("end") or float(window.get("start") or 0.0) + duration),
+                "duration": duration,
+                "quality": float(window.get("quality") or 0.5),
+                "rms_dbfs": float(window.get("rms_dbfs") or -30.0),
+                "voiced_fraction": float(window.get("voiced_fraction") or 1.0),
+                "clipping_ratio": float(window.get("clipping_ratio") or 0.0),
+                "text": str(window.get("text") or ""),
+                "playable": bool(source.get("playable")),
+            }
+        )
+        grouped_segments[(source_id, label)].append(segment_id)
+        grouped_seconds[(source_id, label)] += duration
+
+    pending_path = session_dir / "pending_vectors.npz"
+    atomic_save_npz(pending_path, embeddings=np.stack(vectors).astype(np.float32))
+    labels: list[dict[str, Any]] = []
+    for index, ((source_id, label), segment_ids) in enumerate(grouped_segments.items(), start=1):
+        source = source_by_id[source_id]
+        title = str(source.get("title") or "历史声纹素材")
+        labels.append(
+            {
+                "label": f"{title} · {label}",
+                "meeting_title": title,
+                "risk": "green",
+                "risk_notes": [f"来自 v{int(base_version):04d}，取消选择后不会进入新版本"],
+                "suggestion": {
+                    "person_id": person_id,
+                    "name": person["name"],
+                    "source": "base_profile_version",
+                },
+                "quality": {
+                    "window_count": len(segment_ids),
+                    "usable_seconds": grouped_seconds[(source_id, label)],
+                },
+                "acoustic": {},
+                "clusters": [
+                    {
+                        "cluster_id": f"revision-{index}-c1",
+                        "window_count": len(segment_ids),
+                        "seconds": grouped_seconds[(source_id, label)],
+                        "representative_segment_ids": segment_ids[:3],
+                        "segment_ids": segment_ids,
+                    }
+                ],
+                "outlier_segment_ids": [],
+            }
+        )
+    package = {
+        "schema_version": 1,
+        "session_id": session_id,
+        "kind": "profile_revision",
+        "status": "review_required",
+        "display_title": display_title,
+        "manifest": manifest,
+        "source": sources[0] if sources else {"source_id": "source-unknown", "playable": False},
+        "sources": sources,
+        "model": base["manifest"].get("model") or {},
+        "people": [person],
+        "calibration": {},
+        "labels": labels,
+        "segments": segments,
+        "pending_vector_file": pending_path.name,
+        "selection_requirements": {
+            "minimum_windows": int(PIPELINE_CONFIG["minimum_profile_windows"]),
+            "minimum_seconds": float(PIPELINE_CONFIG["minimum_profile_seconds"]),
+        },
+        "profile_revision": {
+            "person_id": person_id,
+            "base_version": int(base_version),
+            "base_npz_path": str(base_npz_path),
+            "base_npz_sha256": base_npz_sha256,
+            "base_manifest_path": str(base_manifest_path),
+            "base_manifest_sha256": base_manifest_sha256,
+        },
+    }
+    package_path = session_dir / "review_package.json"
+    atomic_write_json(package_path, package)
+    decision = {
+        "assignments": {item["segment_id"]: person_id for item in segments},
+        "new_people": [],
+        "make_current": True,
+    }
+    session = store.set_review_session(
+        session_id,
+        status="review_required",
+        package_path=package_path,
+        decision=decision,
+        event_type="profile_revision_review_prepared",
+    )
+    store.finish_review_job(
+        f"job-{session_id}",
+        "completed",
+        {"phase": "completed", "message": "历史版本已载入审核工作区"},
+    )
+    review_url = f"{base_url.rstrip('/')}/enrollments/{session_id}" if base_url else None
+    return {"session_id": session_id, "status": session["status"], "review_url": review_url}
 
 
 def _candidate_key(candidate: Candidate) -> tuple[int, float, float]:
@@ -851,7 +1111,21 @@ def _load_package(session: dict[str, Any]) -> dict[str, Any]:
     return load_structured(Path(session["package_path"]))
 
 
-def _verify_source(session: dict[str, Any], package: dict[str, Any]) -> None:
+def _verify_source(session: dict[str, Any], package: dict[str, Any], store: DataStore) -> None:
+    if package.get("kind") == "profile_revision":
+        revision = package.get("profile_revision") or {}
+        person_id = str(revision.get("person_id") or "")
+        base_version = int(revision.get("base_version") or 0)
+        # Resolve the immutable profile through the registry again instead of
+        # trusting browser-visible paths or a stale package location.
+        base = store.load_profile(person_id, base_version)
+        if sha256_file(Path(base["npz_path"])) != str(revision.get("base_npz_sha256") or ""):
+            raise RuntimeError("source_changed: 基础声纹向量在审核过程中发生变化")
+        if sha256_file(Path(base["manifest_path"])) != str(
+            revision.get("base_manifest_sha256") or ""
+        ):
+            raise RuntimeError("source_changed: 基础声纹版本信息在审核过程中发生变化")
+        return
     sources = package.get("sources") or [package["source"]]
     for source in sources:
         title = str(source.get("title") or "录音")
@@ -932,11 +1206,20 @@ def validate_review_decision(session_id: str, decision: dict[str, Any], store: D
     session = store.get_review_session(session_id)
     package = _load_package(session)
     try:
-        _verify_source(session, package)
+        _verify_source(session, package, store)
     except RuntimeError as exc:
         store.set_review_session(session_id, status="source_changed", error_message=str(exc), event_type="review_source_changed")
         return {"valid": False, "errors": [str(exc)], "warnings": [], "groups": []}
     groups, people, errors = _decision_groups(package, decision)
+    if package.get("kind") == "profile_revision":
+        target_person_id = str((package.get("profile_revision") or {}).get("person_id") or "")
+        if decision.get("new_people"):
+            errors.append("版本修订任务不能新增或改派人员")
+        unexpected = [person_id for person_id in groups if person_id != target_person_id]
+        if unexpected:
+            errors.append("版本修订任务只能保留到原声纹人员")
+        if target_person_id and target_person_id not in groups:
+            errors.append("请为新版本至少保留一组有效声纹片段")
     if not groups:
         errors.append("请至少为一位人员保留可建库的片段")
     pending_path = Path(session["package_path"]).parent / str(package["pending_vector_file"])
@@ -1026,6 +1309,159 @@ def _candidate_from_segment(segment: dict[str, Any]) -> Candidate:
     )
 
 
+def _profile_vector_provenance(
+    statistics: dict[str, Any], source_windows: list[dict[str, Any]]
+) -> dict[str, list[dict[str, Any]]]:
+    def key(item: dict[str, Any]) -> tuple[Any, ...]:
+        return (
+            str(item.get("label") or ""),
+            int(item.get("utterance_index") or 0),
+            round(float(item.get("start") or 0.0), 3),
+            round(float(item.get("end") or 0.0), 3),
+            str(item.get("text") or ""),
+        )
+
+    pool: dict[tuple[Any, ...], list[dict[str, Any]]] = defaultdict(list)
+    for item in source_windows:
+        pool[key(item)].append(item)
+    result: dict[str, list[dict[str, Any]]] = {"references": [], "heldouts": []}
+    for kind, field in (("references", "reference_windows"), ("heldouts", "holdout_windows")):
+        for index, window in enumerate(statistics.get(field) or []):
+            matches = pool.get(key(window)) or []
+            source = matches.pop(0) if matches else {}
+            result[kind].append(
+                {
+                    **source,
+                    **window,
+                    "window_id": f"{'ref' if kind == 'references' else 'holdout'}-{index:04d}",
+                    "array_kind": kind,
+                    "array_index": index,
+                }
+            )
+    return result
+
+
+def _relative_source_path(root: Path, raw_path: str) -> str | None:
+    try:
+        return str(Path(raw_path).resolve().relative_to(root))
+    except ValueError:
+        return None
+
+
+def _commit_profile_revision(
+    session: dict[str, Any],
+    package: dict[str, Any],
+    decision: dict[str, Any],
+    validation: dict[str, Any],
+    store: DataStore,
+    *,
+    actor: str | None,
+    client: dict[str, Any] | None,
+) -> dict[str, Any]:
+    session_id = str(session["session_id"])
+    revision = package["profile_revision"]
+    person_id = str(revision["person_id"])
+    base_version = int(revision["base_version"])
+    groups, _, errors = _decision_groups(package, decision)
+    if errors:
+        return {
+            "status": "validation_failed",
+            "valid": False,
+            "errors": errors,
+            "warnings": [],
+        }
+    selected_indices = sorted(set(groups.get(person_id) or []))
+    segment_by_vector = {
+        int(item["vector_index"]): item for item in package.get("segments", [])
+    }
+    included_window_ids = [
+        str(segment_by_vector[index]["source_window_id"])
+        for index in selected_indices
+    ]
+    make_current = bool(decision.get("make_current", True))
+    person = store.get_person(person_id)
+    before_pointer = person.get("current_version")
+    journal_path = Path(session["package_path"]).parent / "commit_journal.json"
+    created_version: int | None = None
+    atomic_write_json(
+        journal_path,
+        {
+            "session_id": session_id,
+            "state": "committing",
+            "person_id": person_id,
+            "base_version": base_version,
+            "before_pointer": before_pointer,
+        },
+    )
+    try:
+        profile = store.fork_profile_version(
+            person_id,
+            base_version,
+            included_window_ids,
+            make_current=make_current,
+            review_session_id=session_id,
+            confirmation_mode="web_reviewed_revision",
+        )
+        created_version = int(profile["new_version"])
+        result = {
+            "schema_version": 1,
+            "session_id": session_id,
+            "status": "committed",
+            "kind": "profile_revision",
+            "committed_at": now_iso(),
+            "created_profiles": [profile],
+            "profile_revision": profile,
+            "validation": validation,
+            "playback_count": store.audit_count(session_id, "review_segment_played"),
+        }
+        result_path = Path(session["package_path"]).parent / "review_result.json"
+        atomic_write_json(result_path, result)
+        atomic_write_json(
+            journal_path,
+            {"session_id": session_id, "state": "committed", "result": str(result_path)},
+        )
+        pending_path = Path(session["package_path"]).parent / str(package["pending_vector_file"])
+        if pending_path.exists():
+            pending_path.unlink()
+        store.set_review_session(
+            session_id,
+            status="committed",
+            result_path=result_path,
+            actor=actor,
+            client=client,
+            event_type="profile_revision_commit_completed",
+        )
+        return result
+    except Exception as exc:
+        store.restore_profile_pointer(person_id, before_pointer)
+        if created_version is not None:
+            with store.connect() as db:
+                db.execute(
+                    "UPDATE profile_versions SET status = 'failed_commit' "
+                    "WHERE person_id = ? AND version = ?",
+                    (person_id, created_version),
+                )
+        atomic_write_json(
+            journal_path,
+            {
+                "session_id": session_id,
+                "state": "failed",
+                "error": f"{type(exc).__name__}: {exc}",
+                "before_pointer": before_pointer,
+                "created_version": created_version,
+            },
+        )
+        store.set_review_session(
+            session_id,
+            status="failed",
+            error_message=f"{type(exc).__name__}: {exc}",
+            actor=actor,
+            client=client,
+            event_type="profile_revision_commit_failed",
+        )
+        raise
+
+
 def commit_review_session(
     session_id: str,
     revision: int,
@@ -1054,6 +1490,16 @@ def commit_review_session(
         store.set_review_session(
             session_id, status="committing", actor=actor, client=client, event_type="review_commit_started"
         )
+        if package.get("kind") == "profile_revision":
+            return _commit_profile_revision(
+                session,
+                package,
+                decision,
+                validation,
+                store,
+                actor=actor,
+                client=client,
+            )
         journal_path = Path(session["package_path"]).parent / "commit_journal.json"
         before_pointers: dict[str, int | None] = {}
         created: list[dict[str, Any]] = []
@@ -1095,20 +1541,27 @@ def commit_review_session(
                 for window in source_windows:
                     selected_by_source[str(window.get("source_id") or "source-1")].append(window)
                 source_records = []
+                customer_source_root = store.customer_source_dir(str(manifest["customer"]["id"])).resolve()
                 for source in package.get("sources") or [package["source"]]:
                     source_id = str(source.get("source_id") or "source-1")
                     if source_id not in selected_by_source:
                         continue
-                    source_records.append(
-                        {
-                            "source_id": source_id,
-                            "meeting_id": source.get("meeting_id"),
-                            "title": source.get("title"),
-                            "audio_sha256": source["audio_sha256"],
-                            "transcript_sha256": source["transcript_sha256"],
-                            "selected_window_count": len(selected_by_source[source_id]),
-                        }
-                    )
+                    source_record = {
+                        "source_id": source_id,
+                        "customer_id": str(manifest["customer"]["id"]),
+                        "meeting_id": source.get("meeting_id"),
+                        "title": source.get("title"),
+                        "audio_sha256": source["audio_sha256"],
+                        "transcript_sha256": source["transcript_sha256"],
+                        "selected_window_count": len(selected_by_source[source_id]),
+                    }
+                    audio_relative = _relative_source_path(customer_source_root, source["audio_path"])
+                    transcript_relative = _relative_source_path(customer_source_root, source["transcript_path"])
+                    if audio_relative:
+                        source_record["audio_relative_path"] = audio_relative
+                    if transcript_relative:
+                        source_record["transcript_relative_path"] = transcript_relative
+                    source_records.append(source_record)
                 if person.get("current_version") is None:
                     profile_manifest = {
                         "model": package["model"],
@@ -1122,6 +1575,8 @@ def commit_review_session(
                             "source_windows": source_windows,
                         },
                         "statistics": stats,
+                        "vector_provenance": _profile_vector_provenance(stats, source_windows),
+                        "creation_mode": "enrollment",
                         "sources": [
                             {
                                 "kind": "reviewed_initial_enrollment",

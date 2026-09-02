@@ -20,6 +20,7 @@ from speaker_engine.review import (
     cleanup_review_artifacts,
     commit_review_session,
     create_enrollment_review,
+    create_profile_revision_review,
     create_profile_review,
     normalize_review_manifest,
     restart_cancelled_enrollment_review,
@@ -86,14 +87,17 @@ def _session_summary(store: DataStore, session: dict[str, Any]) -> dict[str, Any
         manifest = load_structured(Path(session["manifest_path"]))
     meetings = manifest.get("meetings") or ([manifest["meeting"]] if manifest.get("meeting") else [])
     titles = [str(item.get("title") or "录音") for item in meetings]
-    display_title = "、".join(titles[:2])
-    if len(titles) > 2:
-        display_title += f" 等 {len(titles)} 份录音"
+    display_title = str(manifest.get("display_title") or "")
+    if not display_title:
+        display_title = "、".join(titles[:2])
+        if len(titles) > 2:
+            display_title += f" 等 {len(titles)} 份录音"
     return {
         "customer_name": str(customer["name"]),
         "display_title": display_title or "声纹审核任务",
         "meeting_titles": titles,
         "recording_count": len(titles),
+        "task_type": str(session.get("kind") or "enrollment"),
     }
 
 
@@ -108,19 +112,29 @@ def _session_payload(store: DataStore, session_id: str, include_package: bool = 
         # server pathname.  Audio is available only through segment_id.
         sources = package.get("sources") or [package["source"]]
         package["source"] = {
-            "audio_sha256": package["source"]["audio_sha256"],
-            "transcript_sha256": package["source"]["transcript_sha256"],
+            key: package["source"].get(key)
+            for key in (
+                "source_id", "meeting_id", "title", "audio_sha256",
+                "transcript_sha256", "playable",
+            )
+            if package["source"].get(key) is not None
         }
         package["sources"] = [
             {
-                "source_id": item.get("source_id"),
-                "meeting_id": item.get("meeting_id"),
-                "title": item.get("title"),
-                "audio_sha256": item["audio_sha256"],
-                "transcript_sha256": item["transcript_sha256"],
+                key: item.get(key)
+                for key in (
+                    "source_id", "meeting_id", "title", "audio_sha256",
+                    "transcript_sha256", "playable",
+                )
+                if item.get(key) is not None
             }
             for item in sources
         ]
+        if isinstance(package.get("profile_revision"), dict):
+            package["profile_revision"] = {
+                key: package["profile_revision"].get(key)
+                for key in ("person_id", "base_version")
+            }
         package["manifest"]["meeting"].pop("audio", None)
         package["manifest"]["meeting"].pop("transcript", None)
         for meeting in package["manifest"].get("meetings") or []:
@@ -295,6 +309,51 @@ def create_app(store: DataStore, *, base_url: str, download: bool = False) -> Fa
             ],
         }
 
+    @app.get("/api/v1/profiles")
+    def profiles(
+        page: int = 1,
+        page_size: int = 20,
+        customer_id: str | None = None,
+        scope: str | None = None,
+        status: str | None = None,
+        keyword: str | None = None,
+    ) -> dict[str, Any]:
+        try:
+            return store.list_profiles(
+                page=page,
+                page_size=page_size,
+                customer_id=customer_id,
+                scope=scope,
+                status=status,
+                keyword=keyword,
+            )
+        except Exception as exc:
+            raise _api_error(exc) from exc
+
+    @app.get("/api/v1/profiles/{person_id}/versions")
+    def profile_versions(person_id: str) -> dict[str, Any]:
+        try:
+            person = store.get_person(person_id)
+            return {
+                "person": {
+                    key: person.get(key)
+                    for key in (
+                        "person_id", "name", "role", "scope", "organization", "customer_id",
+                        "current_version", "voiceprint_enabled",
+                    )
+                },
+                "versions": store.list_profile_versions(person_id),
+            }
+        except Exception as exc:
+            raise _api_error(exc) from exc
+
+    @app.get("/api/v1/profiles/{person_id}/versions/{version}")
+    def profile_version_detail(person_id: str, version: int) -> dict[str, Any]:
+        try:
+            return store.profile_version_detail(person_id, version)
+        except Exception as exc:
+            raise _api_error(exc) from exc
+
     @app.get("/api/v1/customers/{customer_id}/candidates")
     def customer_candidates(customer_id: str) -> dict[str, Any]:
         store.get_customer(customer_id)
@@ -410,6 +469,8 @@ def create_app(store: DataStore, *, base_url: str, download: bool = False) -> Fa
             source = next(
                 item for item in sources if str(item.get("source_id") or "source-1") == source_id
             )
+            if not source.get("audio_path"):
+                raise FileNotFoundError("该历史版本没有可试听的原始录音路径")
             audio = Path(source["audio_path"]).resolve()
             if not audio.is_file():
                 raise FileNotFoundError(audio)
@@ -530,6 +591,103 @@ def create_app(store: DataStore, *, base_url: str, download: bool = False) -> Fa
         try:
             result = store.rollback_profile(person_id, payload.get("to_version"))
             store.audit_event("profile_rolled_back", actor=str(payload.get("reviewer") or ""), value=result, client=_client(request))
+            return result
+        except Exception as exc:
+            raise _api_error(exc) from exc
+
+    @app.post("/api/v1/profiles/{person_id}/current-version")
+    async def set_current_profile_version(
+        person_id: str,
+        request: Request,
+        x_csrf_token: str | None = Header(default=None),
+        speaker_review_csrf: str | None = Cookie(default=None),
+    ) -> dict[str, Any]:
+        _require_csrf(speaker_review_csrf, x_csrf_token)
+        payload = await request.json()
+        try:
+            result = store.set_current_profile_version(person_id, int(payload["version"]))
+            store.audit_event("profile_current_version_changed", value=result, client=_client(request))
+            return result
+        except Exception as exc:
+            raise _api_error(exc) from exc
+
+    @app.post("/api/v1/profiles/{person_id}/disable")
+    async def disable_profile(
+        person_id: str,
+        request: Request,
+        x_csrf_token: str | None = Header(default=None),
+        speaker_review_csrf: str | None = Cookie(default=None),
+    ) -> dict[str, Any]:
+        _require_csrf(speaker_review_csrf, x_csrf_token)
+        try:
+            result = store.set_profile_enabled(person_id, False)
+            store.audit_event("profile_disabled", value=result, client=_client(request))
+            return result
+        except Exception as exc:
+            raise _api_error(exc) from exc
+
+    @app.post("/api/v1/profiles/{person_id}/enable")
+    async def enable_profile(
+        person_id: str,
+        request: Request,
+        x_csrf_token: str | None = Header(default=None),
+        speaker_review_csrf: str | None = Cookie(default=None),
+    ) -> dict[str, Any]:
+        _require_csrf(speaker_review_csrf, x_csrf_token)
+        try:
+            result = store.set_profile_enabled(person_id, True)
+            store.audit_event("profile_enabled", value=result, client=_client(request))
+            return result
+        except Exception as exc:
+            raise _api_error(exc) from exc
+
+    @app.post("/api/v1/profiles/{person_id}/versions/{version}/fork")
+    async def fork_profile_version(
+        person_id: str,
+        version: int,
+        request: Request,
+        x_csrf_token: str | None = Header(default=None),
+        speaker_review_csrf: str | None = Cookie(default=None),
+    ) -> dict[str, Any]:
+        _require_csrf(speaker_review_csrf, x_csrf_token)
+        payload = await request.json()
+        try:
+            included = payload.get("included_window_ids")
+            if included is not None and not isinstance(included, list):
+                raise ValueError("included_window_ids must be a list")
+            result = store.fork_profile_version(
+                person_id,
+                version,
+                [str(item) for item in included] if included is not None else None,
+                make_current=bool(payload.get("make_current", True)),
+            )
+            store.audit_event("profile_version_forked", value=result, client=_client(request))
+            return result
+        except Exception as exc:
+            raise _api_error(exc) from exc
+
+    @app.post("/api/v1/profiles/{person_id}/versions/{version}/review")
+    async def create_profile_revision_session(
+        person_id: str,
+        version: int,
+        request: Request,
+        x_csrf_token: str | None = Header(default=None),
+        speaker_review_csrf: str | None = Cookie(default=None),
+    ) -> dict[str, Any]:
+        _require_csrf(speaker_review_csrf, x_csrf_token)
+        try:
+            result = create_profile_revision_review(
+                person_id,
+                version,
+                store,
+                base_url=app.state.base_url,
+            )
+            store.audit_event(
+                "profile_revision_review_created",
+                session_id=result["session_id"],
+                value={"person_id": person_id, "base_version": version},
+                client=_client(request),
+            )
             return result
         except Exception as exc:
             raise _api_error(exc) from exc

@@ -1,0 +1,6 @@
+interface:
+  display_name: "专业管理后台"
+  short_description: "以专业信息架构、真实分页和完整验收构建可扩展本地管理后台"
+  default_prompt: "Use $professional-admin-console to turn this internal tool into a coherent, scalable, and fully verified management console."
+policy:
+  allow_implicit_invocation: true

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import sqlite3
 from datetime import datetime, timedelta, timezone
@@ -71,6 +72,7 @@ class DataStore:
                     role TEXT NOT NULL DEFAULT '',
                     organization TEXT NOT NULL,
                     active INTEGER NOT NULL DEFAULT 1,
+                    voiceprint_enabled INTEGER NOT NULL DEFAULT 1,
                     current_version INTEGER,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
@@ -88,6 +90,8 @@ class DataStore:
                     status TEXT NOT NULL DEFAULT 'active',
                     review_session_id TEXT,
                     confirmation_mode TEXT,
+                    parent_version INTEGER,
+                    creation_mode TEXT,
                     created_at TEXT NOT NULL,
                     PRIMARY KEY(person_id, version),
                     FOREIGN KEY(person_id) REFERENCES people(person_id)
@@ -169,6 +173,9 @@ class DataStore:
             self._add_column(db, "profile_versions", "status TEXT NOT NULL DEFAULT 'active'")
             self._add_column(db, "profile_versions", "review_session_id TEXT")
             self._add_column(db, "profile_versions", "confirmation_mode TEXT")
+            self._add_column(db, "profile_versions", "parent_version INTEGER")
+            self._add_column(db, "profile_versions", "creation_mode TEXT")
+            self._add_column(db, "people", "voiceprint_enabled INTEGER NOT NULL DEFAULT 1")
         with np.errstate(all="ignore"):
             try:
                 os.chmod(self.db_path, 0o600)
@@ -366,6 +373,48 @@ class DataStore:
             raise KeyError(f"Unknown customer: {customer_id}")
         return dict(row)
 
+    def ensure_shared_review_customer(self) -> dict[str, Any]:
+        """Create the hidden registry owner used by staff profile reviews.
+
+        Review sessions require a customer-scoped storage directory.  Global
+        staff profiles do not belong to a customer, so their revision drafts
+        live under the existing shared data directory and remain absent from
+        the customer picker.
+        """
+        customer_id = "__shared_staff__"
+        now = now_iso()
+        metadata = {
+            "id": customer_id,
+            "name": "我方共享",
+            "directory_relpath": "共享数据",
+            "internal": True,
+        }
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT * FROM customers WHERE customer_id = ?", (customer_id,)
+            ).fetchone()
+            if row is None:
+                db.execute(
+                    """
+                    INSERT INTO customers(
+                        customer_id, name, directory_relpath, metadata_json,
+                        created_at, updated_at
+                    ) VALUES(?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        customer_id,
+                        metadata["name"],
+                        "共享数据" if self.layout == "customer-root-v1" else None,
+                        json.dumps(metadata, ensure_ascii=False),
+                        now,
+                        now,
+                    ),
+                )
+        # Resolve once so permissions and the review-session directory parent
+        # are guaranteed before the caller writes a package.
+        self.customer_dir(customer_id)
+        return self.get_customer(customer_id)
+
     def get_person(self, person_id: str) -> dict[str, Any]:
         with self.connect() as db:
             row = db.execute("SELECT * FROM people WHERE person_id = ?", (person_id,)).fetchone()
@@ -387,7 +436,9 @@ class DataStore:
             ).fetchall()
             profile_people = int(
                 db.execute(
-                    "SELECT COUNT(*) FROM people WHERE active = 1 AND current_version IS NOT NULL"
+                    """SELECT COUNT(*) FROM people
+                       WHERE active = 1 AND voiceprint_enabled = 1
+                             AND current_version IS NOT NULL"""
                 ).fetchone()[0]
             )
             profile_versions = int(db.execute("SELECT COUNT(*) FROM profile_versions").fetchone()[0])
@@ -490,6 +541,84 @@ class DataStore:
             rows = db.execute(query, parameters).fetchall()
         return [dict(row) for row in rows]
 
+    def list_profiles(
+        self,
+        *,
+        page: int = 1,
+        page_size: int = 20,
+        customer_id: str | None = None,
+        scope: str | None = None,
+        status: str | None = None,
+        keyword: str | None = None,
+    ) -> dict[str, Any]:
+        """Return a server-paginated catalogue without duplicating global staff."""
+        page = max(1, int(page))
+        page_size = min(100, max(1, int(page_size)))
+        clauses = [
+            "p.active = 1",
+            "EXISTS (SELECT 1 FROM profile_versions x WHERE x.person_id = p.person_id)",
+        ]
+        parameters: list[Any] = []
+        if customer_id:
+            clauses.append("p.scope = 'customer' AND p.customer_id = ?")
+            parameters.append(customer_id)
+        if scope in {"customer", "staff"}:
+            clauses.append("p.scope = ?")
+            parameters.append(scope)
+        if status == "enabled":
+            clauses.append("p.voiceprint_enabled = 1 AND p.current_version IS NOT NULL")
+        elif status == "disabled":
+            clauses.append("(p.voiceprint_enabled = 0 OR p.current_version IS NULL)")
+        query_text = str(keyword or "").strip()
+        if query_text:
+            clauses.append("(p.name LIKE ? ESCAPE '\\' OR p.role LIKE ? ESCAPE '\\' OR c.name LIKE ? ESCAPE '\\')")
+            escaped = query_text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            parameters.extend([f"%{escaped}%"] * 3)
+        where = " AND ".join(f"({item})" for item in clauses)
+        with self.connect() as db:
+            total = int(
+                db.execute(
+                    f"SELECT COUNT(*) FROM people p LEFT JOIN customers c ON c.customer_id = p.customer_id WHERE {where}",
+                    parameters,
+                ).fetchone()[0]
+            )
+            rows = db.execute(
+                f"""
+                SELECT p.*, c.name AS customer_name,
+                       (SELECT COUNT(*) FROM profile_versions pv WHERE pv.person_id = p.person_id) AS version_count,
+                       (SELECT created_at FROM profile_versions pv
+                        WHERE pv.person_id = p.person_id AND pv.version = p.current_version) AS current_version_created_at
+                FROM people p
+                LEFT JOIN customers c ON c.customer_id = p.customer_id
+                WHERE {where}
+                ORDER BY p.updated_at DESC, p.name COLLATE NOCASE
+                LIMIT ? OFFSET ?
+                """,
+                [*parameters, page_size, (page - 1) * page_size],
+            ).fetchall()
+        items: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            item["voiceprint_enabled"] = bool(item.get("voiceprint_enabled"))
+            item["profile_status"] = (
+                "enabled"
+                if item["voiceprint_enabled"] and item.get("current_version") is not None
+                else "disabled"
+            )
+            item["current_version_summary"] = (
+                self.profile_version_summary(str(item["person_id"]), int(item["current_version"]))
+                if item.get("current_version") is not None
+                else None
+            )
+            items.append(item)
+        return {
+            "items": items,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "pages": max(1, int(math.ceil(total / page_size))) if total else 1,
+        }
+
     def resolve_attendee_name(
         self, customer_id: str, attendees: dict[str, dict[str, Any]], name: str
     ) -> dict[str, Any]:
@@ -517,6 +646,8 @@ class DataStore:
         arrays: dict[str, np.ndarray],
         manifest: dict[str, Any],
         version: int | None = None,
+        *,
+        make_current: bool = True,
     ) -> dict[str, Any]:
         references = np.asarray(arrays["references"], dtype=np.float32)
         heldouts = np.asarray(arrays["heldouts"], dtype=np.float32)
@@ -531,8 +662,14 @@ class DataStore:
 
         profile_dir = self.profile_dir(person)
         with file_lock(self.person_lock(person)):
-            current = person.get("current_version")
-            next_version = version if version is not None else int(current or 0) + 1
+            with self.connect() as db:
+                highest = int(
+                    db.execute(
+                        "SELECT COALESCE(MAX(version), 0) FROM profile_versions WHERE person_id = ?",
+                        (person["person_id"],),
+                    ).fetchone()[0]
+                )
+            next_version = int(version) if version is not None else highest + 1
             npz_path = profile_dir / f"v{next_version:04d}.npz"
             manifest_path = profile_dir / f"v{next_version:04d}.json"
             if npz_path.exists() or manifest_path.exists():
@@ -559,24 +696,27 @@ class DataStore:
                 quality_weights=weights,
             )
             atomic_write_json(manifest_path, enriched)
-            atomic_write_json(
-                profile_dir / "current.json",
-                {
-                    "schema_version": 1,
-                    "person_id": person["person_id"],
-                    "version": next_version,
-                    "npz": npz_path.name,
-                    "manifest": manifest_path.name,
-                    "updated_at": now_iso(),
-                },
-            )
+            if make_current:
+                atomic_write_json(
+                    profile_dir / "current.json",
+                    {
+                        "schema_version": 1,
+                        "person_id": person["person_id"],
+                        "version": next_version,
+                        "npz": npz_path.name,
+                        "manifest": manifest_path.name,
+                        "status": "active" if bool(person.get("voiceprint_enabled", 1)) else "disabled",
+                        "updated_at": now_iso(),
+                    },
+                )
             with self.connect() as db:
                 db.execute(
                     """
                     INSERT INTO profile_versions(
                         person_id, version, npz_path, manifest_path, status,
-                        review_session_id, confirmation_mode, created_at
-                    ) VALUES(?, ?, ?, ?, 'active', ?, ?, ?)
+                        review_session_id, confirmation_mode, parent_version,
+                        creation_mode, created_at
+                    ) VALUES(?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)
                     """,
                     (
                         person["person_id"],
@@ -585,17 +725,21 @@ class DataStore:
                         self.storage_uri(manifest_path, person.get("customer_id")),
                         str(manifest.get("review_session_id") or "") or None,
                         str(manifest.get("confirmation_mode") or "") or None,
+                        manifest.get("parent_version") or manifest.get("previous_version"),
+                        str(manifest.get("creation_mode") or "") or None,
                         now_iso(),
                     ),
                 )
-                db.execute(
-                    "UPDATE people SET current_version = ?, updated_at = ? WHERE person_id = ?",
-                    (next_version, now_iso(), person["person_id"]),
-                )
+                if make_current:
+                    db.execute(
+                        "UPDATE people SET current_version = ?, updated_at = ? WHERE person_id = ?",
+                        (next_version, now_iso(), person["person_id"]),
+                    )
         return {
             "person_id": person["person_id"],
             "name": person["name"],
             "version": next_version,
+            "is_current": make_current,
             "npz_path": str(npz_path),
             "manifest_path": str(manifest_path),
         }
@@ -637,6 +781,7 @@ class DataStore:
                 """
                 SELECT * FROM people
                 WHERE scope = 'customer' AND customer_id = ? AND active = 1
+                      AND voiceprint_enabled = 1
                       AND current_version IS NOT NULL
                 """,
                 (customer_id,),
@@ -644,7 +789,8 @@ class DataStore:
             staff_rows = db.execute(
                 """
                 SELECT * FROM people
-                WHERE scope = 'staff' AND active = 1 AND current_version IS NOT NULL
+                WHERE scope = 'staff' AND active = 1 AND voiceprint_enabled = 1
+                      AND current_version IS NOT NULL
                 """
             ).fetchall()
         selected: dict[str, dict[str, Any]] = {row["person_id"]: dict(row) for row in customer_rows}
@@ -774,17 +920,176 @@ class DataStore:
                 (status, now_iso(), candidate_id),
             )
 
-    def rollback_profile(
-        self, person_id: str, to_version: int | None = None
-    ) -> dict[str, Any]:
+    @staticmethod
+    def _window_key(window: dict[str, Any]) -> tuple[Any, ...]:
+        return (
+            str(window.get("label") or ""),
+            int(window.get("utterance_index") or 0),
+            round(float(window.get("start") or 0.0), 3),
+            round(float(window.get("end") or 0.0), 3),
+            str(window.get("text") or ""),
+        )
+
+    @staticmethod
+    def _safe_sources(manifest: dict[str, Any]) -> list[dict[str, Any]]:
+        registration = manifest.get("registration") if isinstance(manifest.get("registration"), dict) else {}
+        raw_sources = list(registration.get("source_recordings") or []) + list(manifest.get("sources") or [])
+        allowed = {
+            "source_id", "customer_id", "meeting_id", "title", "audio_relative_path",
+            "transcript_relative_path", "audio_sha256", "transcript_sha256",
+            "selected_window_count", "kind", "candidate_id", "run_id",
+        }
+        values: list[dict[str, Any]] = []
+        seen: set[tuple[str, str, str]] = set()
+        for raw in raw_sources:
+            if not isinstance(raw, dict):
+                continue
+            value = {key: raw.get(key) for key in allowed if raw.get(key) not in {None, ""}}
+            if value.get("meeting_id"):
+                identity = ("meeting", str(value["meeting_id"]), str(value.get("title") or ""))
+            elif value.get("source_id"):
+                identity = ("source", str(value["source_id"]), str(value.get("title") or ""))
+            else:
+                identity = (
+                    "other",
+                    str(value.get("candidate_id") or value.get("run_id") or ""),
+                    str(value.get("title") or ""),
+                )
+            if identity in seen:
+                continue
+            seen.add(identity)
+            values.append(value)
+        return values
+
+    def _profile_provenance(self, profile: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+        manifest = profile["manifest"]
+        stored = manifest.get("vector_provenance")
+        if isinstance(stored, dict) and isinstance(stored.get("references"), list):
+            raw = {
+                "references": list(stored.get("references") or []),
+                "heldouts": list(stored.get("heldouts") or []),
+            }
+        else:
+            statistics = manifest.get("statistics") if isinstance(manifest.get("statistics"), dict) else {}
+            raw = {
+                "references": list(statistics.get("reference_windows") or []),
+                "heldouts": list(statistics.get("holdout_windows") or []),
+            }
+        registration = manifest.get("registration") if isinstance(manifest.get("registration"), dict) else {}
+        source_windows = [item for item in registration.get("source_windows") or [] if isinstance(item, dict)]
+        source_map: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
+        for item in source_windows:
+            source_map.setdefault(self._window_key(item), []).append(item)
+        output: dict[str, list[dict[str, Any]]] = {"references": [], "heldouts": []}
+        for kind in ("references", "heldouts"):
+            for index, item in enumerate(raw[kind]):
+                if not isinstance(item, dict):
+                    continue
+                matches = source_map.get(self._window_key(item)) or []
+                source = matches.pop(0) if matches else {}
+                prefix = "ref" if kind == "references" else "holdout"
+                output[kind].append(
+                    {
+                        **source,
+                        **item,
+                        "window_id": str(item.get("window_id") or f"{prefix}-{index:04d}"),
+                        "array_kind": kind,
+                        "array_index": index,
+                    }
+                )
+        return output
+
+    def profile_version_summary(self, person_id: str, version: int) -> dict[str, Any]:
         person = self.get_person(person_id)
-        current = person.get("current_version")
-        if current is None:
-            raise FileNotFoundError(f"No profile for {person['name']}")
-        selected = int(current) - 1 if to_version is None else int(to_version)
-        if selected < 1:
-            raise ValueError("No earlier profile version exists")
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT * FROM profile_versions WHERE person_id = ? AND version = ?",
+                (person_id, int(version)),
+            ).fetchone()
+        if row is None:
+            raise FileNotFoundError(f"Profile not found: {person_id} v{version}")
+        manifest_path = self.resolve_storage_path(str(row["manifest_path"]), person.get("customer_id"))
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        statistics = manifest.get("statistics") if isinstance(manifest.get("statistics"), dict) else {}
+        sources = self._safe_sources(manifest)
+        reference_count = int(statistics.get("reference_count") or 0)
+        holdout_count = int(statistics.get("holdout_count") or 0)
+        if "reference_seconds" in statistics or "holdout_seconds" in statistics:
+            seconds: float | None = float(statistics.get("reference_seconds") or 0.0) + float(
+                statistics.get("holdout_seconds") or 0.0
+            )
+        else:
+            provenance = manifest.get("vector_provenance")
+            provenance_windows = (
+                list(provenance.get("references") or []) + list(provenance.get("heldouts") or [])
+                if isinstance(provenance, dict)
+                else []
+            )
+            seconds = (
+                float(
+                    sum(
+                        float(item.get("duration") or 0.0)
+                        for item in provenance_windows
+                        if isinstance(item, dict)
+                    )
+                )
+                if provenance_windows
+                else None
+            )
+        return {
+            "version": int(version),
+            "is_current": int(version) == person.get("current_version"),
+            "created_at": manifest.get("created_at") or row["created_at"],
+            "parent_version": manifest.get("parent_version") or manifest.get("previous_version"),
+            "creation_mode": manifest.get("creation_mode") or (
+                "fork" if manifest.get("parent_version") else "enrollment"
+            ),
+            "source_count": len(sources),
+            "reference_count": reference_count,
+            "holdout_count": holdout_count,
+            "usable_seconds": seconds,
+            "review_session_id": manifest.get("review_session_id"),
+        }
+
+    def list_profile_versions(self, person_id: str) -> list[dict[str, Any]]:
+        person = self.get_person(person_id)
+        with self.connect() as db:
+            rows = db.execute(
+                "SELECT version, status, review_session_id, confirmation_mode, parent_version, creation_mode, created_at "
+                "FROM profile_versions WHERE person_id = ? ORDER BY version DESC",
+                (person_id,),
+            ).fetchall()
+        values: list[dict[str, Any]] = []
+        for row in rows:
+            summary = self.profile_version_summary(person_id, int(row["version"]))
+            values.append({**dict(row), **summary, "is_current": int(row["version"]) == person.get("current_version")})
+        return values
+
+    def profile_version_detail(self, person_id: str, version: int) -> dict[str, Any]:
+        profile = self.load_profile(person_id, version)
+        manifest = profile["manifest"]
+        provenance = self._profile_provenance(profile)
+        return {
+            "person": {
+                key: profile["person"].get(key)
+                for key in (
+                    "person_id", "name", "role", "scope", "organization", "customer_id",
+                    "current_version", "voiceprint_enabled",
+                )
+            },
+            "summary": self.profile_version_summary(person_id, version),
+            "sources": self._safe_sources(manifest),
+            "windows": provenance["references"] + provenance["heldouts"],
+            "model": manifest.get("model") or {},
+            "statistics": manifest.get("statistics") or {},
+        }
+
+    def set_current_profile_version(self, person_id: str, version: int) -> dict[str, Any]:
+        person = self.get_person(person_id)
+        selected = int(version)
         profile = self.load_profile(person_id, selected)
+        previous = person.get("current_version")
+        enabled = bool(person.get("voiceprint_enabled", 1))
         with file_lock(self.person_lock(person)):
             atomic_write_json(
                 self.profile_dir(person) / "current.json",
@@ -794,8 +1099,9 @@ class DataStore:
                     "version": selected,
                     "npz": profile["npz_path"].name,
                     "manifest": profile["manifest_path"].name,
+                    "status": "active" if enabled else "disabled",
                     "updated_at": now_iso(),
-                    "rollback_from": int(current),
+                    "switched_from": previous,
                 },
             )
             with self.connect() as db:
@@ -803,66 +1109,156 @@ class DataStore:
                     "UPDATE people SET current_version = ?, updated_at = ? WHERE person_id = ?",
                     (selected, now_iso(), person_id),
                 )
-                db.execute(
-                    "UPDATE profile_versions SET status = 'active' WHERE person_id = ? AND version = ?",
-                    (person_id, selected),
-                )
         return {
             "person_id": person_id,
             "name": person["name"],
-            "from_version": int(current),
+            "from_version": previous,
             "to_version": selected,
+            "voiceprint_enabled": enabled,
         }
 
-    def list_profile_versions(self, person_id: str) -> list[dict[str, Any]]:
+    def rollback_profile(self, person_id: str, to_version: int | None = None) -> dict[str, Any]:
         person = self.get_person(person_id)
-        with self.connect() as db:
-            rows = db.execute(
-                "SELECT * FROM profile_versions WHERE person_id = ? ORDER BY version DESC", (person_id,)
-            ).fetchall()
-        values: list[dict[str, Any]] = []
-        for row in rows:
-            value = dict(row)
-            value["npz_path"] = str(
-                self.resolve_storage_path(str(value["npz_path"]), person.get("customer_id"))
-            )
-            value["manifest_path"] = str(
-                self.resolve_storage_path(str(value["manifest_path"]), person.get("customer_id"))
-            )
-            value["is_current"] = int(value["version"]) == person.get("current_version")
-            values.append(value)
-        return values
+        current = person.get("current_version")
+        if current is None:
+            raise FileNotFoundError(f"No profile for {person['name']}")
+        selected = int(current) - 1 if to_version is None else int(to_version)
+        if selected < 1:
+            raise ValueError("No earlier profile version exists")
+        return self.set_current_profile_version(person_id, selected)
 
-    def quarantine_profile(self, person_id: str, actor: str | None = None) -> dict[str, Any]:
+    def set_profile_enabled(self, person_id: str, enabled: bool) -> dict[str, Any]:
         person = self.get_person(person_id)
-        previous = person.get("current_version")
+        current = person.get("current_version")
+        if enabled and current is None:
+            raise FileNotFoundError(f"No profile version can be enabled for {person['name']}")
+        payload: dict[str, Any] = {
+            "schema_version": 1,
+            "person_id": person_id,
+            "version": current,
+            "status": "active" if enabled else "disabled",
+            "updated_at": now_iso(),
+        }
+        if current is not None:
+            profile = self.load_profile(person_id, int(current))
+            payload.update({"npz": profile["npz_path"].name, "manifest": profile["manifest_path"].name})
         with file_lock(self.person_lock(person)):
-            atomic_write_json(
-                self.profile_dir(person) / "current.json",
-                {
-                    "schema_version": 1,
-                    "person_id": person_id,
-                    "version": None,
-                    "updated_at": now_iso(),
-                    "status": "quarantined",
-                    "quarantined_by": actor,
-                },
-            )
+            atomic_write_json(self.profile_dir(person) / "current.json", payload)
             with self.connect() as db:
                 db.execute(
-                    "UPDATE people SET current_version = NULL, updated_at = ? WHERE person_id = ?",
-                    (now_iso(), person_id),
+                    "UPDATE people SET voiceprint_enabled = ?, updated_at = ? WHERE person_id = ?",
+                    (1 if enabled else 0, now_iso(), person_id),
                 )
-                if previous is not None:
-                    db.execute(
-                        "UPDATE profile_versions SET status = 'quarantined' WHERE person_id = ? AND version = ?",
-                        (person_id, int(previous)),
-                    )
         return {
             "person_id": person_id,
             "name": person["name"],
-            "quarantined_version": previous,
-            "status": "quarantined",
+            "current_version": current,
+            "status": "enabled" if enabled else "disabled",
+        }
+
+    def quarantine_profile(self, person_id: str, actor: str | None = None) -> dict[str, Any]:
+        """Compatibility alias for the old CLI; disabling is now non-destructive."""
+        result = self.set_profile_enabled(person_id, False)
+        return {**result, "disabled_by": actor}
+
+    def fork_profile_version(
+        self,
+        person_id: str,
+        base_version: int,
+        included_window_ids: list[str] | None = None,
+        *,
+        make_current: bool = True,
+        review_session_id: str | None = None,
+        confirmation_mode: str = "web_version_editor",
+    ) -> dict[str, Any]:
+        from .matching import build_profile_arrays
+        from .transcript import Candidate
+
+        base = self.load_profile(person_id, int(base_version))
+        provenance = self._profile_provenance(base)
+        available = provenance["references"] + provenance["heldouts"]
+        selected_ids = set(included_window_ids or [str(item["window_id"]) for item in available])
+        unknown_ids = selected_ids - {str(item["window_id"]) for item in available}
+        if unknown_ids:
+            raise ValueError(f"Unknown profile windows: {', '.join(sorted(unknown_ids)[:3])}")
+        selected = [item for item in available if str(item["window_id"]) in selected_ids]
+        vectors: list[np.ndarray] = []
+        candidates: list[Candidate] = []
+        for item in selected:
+            array_kind = str(item["array_kind"])
+            array_index = int(item["array_index"])
+            vectors.append(np.asarray(base["arrays"][array_kind][array_index], dtype=np.float32))
+            candidates.append(
+                Candidate(
+                    label=str(item.get("label") or "历史声纹"),
+                    utterance_index=int(item.get("utterance_index") or array_index),
+                    start=float(item.get("start") or 0.0),
+                    end=float(item.get("end") or float(item.get("start") or 0.0) + float(item.get("duration") or 0.0)),
+                    timestamp=str(item.get("timestamp") or "00:00"),
+                    text=str(item.get("text") or ""),
+                    duration=float(item.get("duration") or 0.0),
+                    rms_dbfs=float(item.get("rms_dbfs") or -30.0),
+                    voiced_fraction=float(item.get("voiced_fraction") or 1.0),
+                    clipping_ratio=float(item.get("clipping_ratio") or 0.0),
+                    quality=float(item.get("quality") or 0.5),
+                )
+            )
+        if not vectors:
+            raise ValueError("At least one source window must be retained")
+        arrays, statistics = build_profile_arrays(candidates, np.stack(vectors))
+
+        pool: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
+        for item in selected:
+            pool.setdefault(self._window_key(item), []).append(item)
+        vector_provenance: dict[str, list[dict[str, Any]]] = {"references": [], "heldouts": []}
+        for kind, key in (("references", "reference_windows"), ("heldouts", "holdout_windows")):
+            for index, window in enumerate(statistics.get(key) or []):
+                matches = pool.get(self._window_key(window)) or []
+                source = matches.pop(0) if matches else {}
+                prefix = "ref" if kind == "references" else "holdout"
+                vector_provenance[kind].append(
+                    {
+                        **source,
+                        **window,
+                        "window_id": f"{prefix}-{index:04d}",
+                        "array_kind": kind,
+                        "array_index": index,
+                    }
+                )
+        source_ids = {str(item.get("source_id") or "") for item in selected}
+        sources = [
+            item for item in self._safe_sources(base["manifest"])
+            if not source_ids or not item.get("source_id") or str(item.get("source_id")) in source_ids
+        ]
+        manifest = {
+            "model": base["manifest"].get("model") or {},
+            "parent_version": int(base_version),
+            "previous_version": int(base_version),
+            "creation_mode": "fork",
+            "confirmation_mode": confirmation_mode,
+            "review_session_id": review_session_id,
+            "fork": {
+                "base_version": int(base_version),
+                "created_at": now_iso(),
+                "retained_window_count": len(selected),
+            },
+            "statistics": statistics,
+            "vector_provenance": vector_provenance,
+            "registration": {
+                "source_recordings": sources,
+                "source_windows": selected,
+            },
+            "sources": sources,
+        }
+        saved = self.save_profile(
+            base["person"], arrays, manifest, make_current=make_current
+        )
+        return {
+            "person_id": person_id,
+            "base_version": int(base_version),
+            "new_version": int(saved["version"]),
+            "made_current": bool(make_current),
+            "retained_window_count": len(selected),
         }
 
     def restore_profile_pointer(self, person_id: str, version: int | None) -> None:

@@ -21,6 +21,7 @@ from speaker_engine.review import (
     _review_initial_sample_count,
     _verify_source,
     create_enrollment_review,
+    create_profile_revision_review,
     normalize_review_manifest,
     prepare_review_session,
     restart_cancelled_enrollment_review,
@@ -44,6 +45,33 @@ def arrays(seed: int = 0) -> dict[str, np.ndarray]:
     references = np.stack([unit(center + rng.normal(0, 0.01, 192)) for _ in range(8)])
     heldouts = np.stack([unit(center + rng.normal(0, 0.01, 192)) for _ in range(3)])
     return {"references": references, "heldouts": heldouts, "center": unit(references.mean(axis=0)), "quality_weights": np.ones(8, dtype=np.float32)}
+
+
+def profile_manifest_with_windows(audio: Path, transcript: Path) -> dict:
+    windows = []
+    for index in range(11):
+        start = float(index * 2)
+        windows.append({
+            "label": "说话人 1", "utterance_index": index, "start": start, "end": start + 2.0,
+            "timestamp": f"00:{index * 2:02d}", "text": f"测试发言 {index}", "duration": 2.0,
+            "rms_dbfs": -20.0, "voiced_fraction": 0.9, "clipping_ratio": 0.0, "quality": 0.9,
+            "source_id": "source-1", "meeting_title": "测试会议",
+        })
+    source = {
+        "source_id": "source-1", "customer_id": "customer-a", "meeting_id": "meeting-a",
+        "title": "测试会议", "audio_path": str(audio), "transcript_path": str(transcript),
+        "audio_sha256": sha256_file(audio), "transcript_sha256": sha256_file(transcript),
+        "selected_window_count": len(windows),
+    }
+    return {
+        "model": {"id": "test"}, "creation_mode": "enrollment",
+        "registration": {"source_recordings": [source], "source_windows": windows},
+        "statistics": {
+            "reference_count": 8, "holdout_count": 3,
+            "reference_seconds": 16.0, "holdout_seconds": 6.0,
+            "reference_windows": windows[:8], "holdout_windows": windows[8:],
+        },
+    }
 
 
 def manifest(audio: Path, transcript: Path, customer: str = "客户甲") -> dict:
@@ -166,10 +194,61 @@ class ReviewFixture(unittest.TestCase):
                 {"title": "第二场", "audio_path": str(second_audio), "audio_sha256": sha256_file(second_audio), "transcript_path": str(second_transcript), "transcript_sha256": sha256_file(second_transcript)},
             ]
         }
-        _verify_source({"source_audio_sha256": "unused", "source_transcript_sha256": "unused"}, package)
+        _verify_source({"source_audio_sha256": "unused", "source_transcript_sha256": "unused"}, package, self.store)
         second_transcript.write_text("内容已变化", encoding="utf-8")
         with self.assertRaisesRegex(RuntimeError, "第二场"):
-            _verify_source({"source_audio_sha256": "unused", "source_transcript_sha256": "unused"}, package)
+            _verify_source({"source_audio_sha256": "unused", "source_transcript_sha256": "unused"}, package, self.store)
+
+    def test_profile_revision_reuses_review_flow_and_preserves_version_history(self) -> None:
+        base_manifest = profile_manifest_with_windows(self.audio, self.transcript)
+        self.store.save_profile(self.person, arrays(1), base_manifest)
+        self.store.save_profile(
+            self.store.get_person(self.person["person_id"]),
+            arrays(2),
+            {**base_manifest, "parent_version": 1},
+        )
+        created = create_profile_revision_review(
+            self.person["person_id"], 1, self.store, base_url="http://testserver"
+        )
+        session = self.store.get_review_session(created["session_id"])
+        self.assertEqual(session["kind"], "profile_revision")
+        self.assertEqual(session["status"], "review_required")
+        self.assertEqual(session["job"]["status"], "completed")
+        package = json.loads(Path(session["package_path"]).read_text(encoding="utf-8"))
+        self.assertEqual(len(package["segments"]), 11)
+        self.assertTrue(all(item["playable"] for item in package["segments"]))
+
+        assignments = {
+            item["segment_id"]: self.person["person_id"] if index < 6 else "skip"
+            for index, item in enumerate(package["segments"])
+        }
+        saved = save_review_decision(
+            created["session_id"],
+            {"assignments": assignments, "new_people": [], "make_current": False},
+            session["revision"],
+            self.store,
+        )
+        result = commit_review_session(
+            created["session_id"], saved["revision"], self.store
+        )
+        self.assertEqual(result["profile_revision"]["new_version"], 3)
+        self.assertFalse(result["profile_revision"]["made_current"])
+        self.assertEqual(self.store.get_person(self.person["person_id"])["current_version"], 2)
+        versions = self.store.list_profile_versions(self.person["person_id"])
+        self.assertEqual([item["version"] for item in versions], [3, 2, 1])
+        self.assertEqual(versions[0]["parent_version"], 1)
+        self.assertEqual(versions[0]["review_session_id"], created["session_id"])
+
+    def test_staff_profile_revision_uses_hidden_shared_review_owner(self) -> None:
+        raw = manifest(self.audio, self.transcript)
+        raw["attendees"].append({"name": "图南", "role": "CSM", "organization": "yingdao"})
+        staff = self.store.upsert_manifest(raw)["图南"]
+        self.store.save_profile(staff, arrays(4), profile_manifest_with_windows(self.audio, self.transcript))
+        created = create_profile_revision_review(staff["person_id"], 1, self.store)
+        session = self.store.get_review_session(created["session_id"])
+        self.assertEqual(session["customer_id"], "__shared_staff__")
+        self.assertEqual(self.store.get_customer("__shared_staff__")["name"], "我方共享")
+        self.assertNotIn("我方共享", {item["name"] for item in self.store.discover_customers()})
 
     def test_batch_prepare_and_commit_aggregate_two_recordings(self) -> None:
         second_audio = self.root / "第二场.wav"
@@ -387,6 +466,63 @@ class ReviewFixture(unittest.TestCase):
         self.assertEqual(payload["recent_sessions"][0]["display_title"], "测试会议")
         self.assertEqual(sessions.status_code, 200)
         self.assertEqual(sessions.json()["sessions"][0]["recording_count"], 1)
+
+    def test_profile_api_paginates_switches_and_disables_without_deleting_versions(self) -> None:
+        self.store.save_profile(self.person, arrays(1), {"model": {}, "sources": []})
+        self.store.save_profile(self.store.get_person(self.person["person_id"]), arrays(2), {"model": {}, "sources": [], "parent_version": 1})
+        from fastapi.testclient import TestClient
+
+        with TestClient(create_app(self.store, base_url="http://testserver")) as client:
+            listed = client.get("/api/v1/profiles?page=1&page_size=1")
+            self.assertEqual(listed.status_code, 200)
+            self.assertEqual(listed.json()["total"], 1)
+            versions = client.get(f"/api/v1/profiles/{self.person['person_id']}/versions")
+            self.assertEqual([item["version"] for item in versions.json()["versions"]], [2, 1])
+            csrf = client.get("/api/v1/csrf").json()["token"]
+            switched = client.post(
+                f"/api/v1/profiles/{self.person['person_id']}/current-version",
+                headers={"X-CSRF-Token": csrf},
+                json={"version": 1},
+            )
+            disabled = client.post(
+                f"/api/v1/profiles/{self.person['person_id']}/disable",
+                headers={"X-CSRF-Token": csrf},
+                json={},
+            )
+        self.assertEqual(switched.status_code, 200)
+        self.assertEqual(switched.json()["to_version"], 1)
+        self.assertEqual(disabled.status_code, 200)
+        person = self.store.get_person(self.person["person_id"])
+        self.assertEqual(person["current_version"], 1)
+        self.assertEqual(person["voiceprint_enabled"], 0)
+        self.assertEqual(len(self.store.list_profile_versions(self.person["person_id"])), 2)
+
+    def test_profile_revision_api_opens_sanitized_full_review_task(self) -> None:
+        self.store.save_profile(
+            self.person,
+            arrays(1),
+            profile_manifest_with_windows(self.audio, self.transcript),
+        )
+        from fastapi.testclient import TestClient
+
+        with TestClient(create_app(self.store, base_url="http://testserver")) as client:
+            csrf = client.get("/api/v1/csrf").json()["token"]
+            created = client.post(
+                f"/api/v1/profiles/{self.person['person_id']}/versions/1/review",
+                headers={"X-CSRF-Token": csrf},
+                json={},
+            )
+            self.assertEqual(created.status_code, 200)
+            session = client.get(
+                f"/api/v1/enrollment-sessions/{created.json()['session_id']}"
+            )
+        self.assertEqual(session.status_code, 200)
+        payload = session.json()
+        self.assertEqual(payload["kind"], "profile_revision")
+        self.assertEqual(payload["task_type"], "profile_revision")
+        self.assertEqual(payload["package"]["profile_revision"]["base_version"], 1)
+        self.assertNotIn("base_npz_path", payload["package"]["profile_revision"])
+        self.assertNotIn("audio_path", payload["package"]["sources"][0])
 
     def test_customer_file_listing_does_not_duplicate_a_source_file(self) -> None:
         source_dir = self.customer_root / "客户甲" / "会议素材"

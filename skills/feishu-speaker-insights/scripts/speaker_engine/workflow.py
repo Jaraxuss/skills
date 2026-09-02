@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import tempfile
@@ -698,12 +699,16 @@ def promote_candidate(
             f"Candidate median similarity {consistency:.4f} is inconsistent with "
             f"{person['name']} at threshold {threshold:.4f}"
         )
-    keep = vectors[similarities >= threshold - 0.05]
+    keep_indices = np.where(similarities >= threshold - 0.05)[0]
+    keep = vectors[keep_indices]
     if len(keep) < 2:
         raise RuntimeError("Too few candidate vectors remain after consistency filtering")
     candidate_holdout_indices = set(range(3, len(keep), 4))
+    candidate_reference_indices = [
+        index for index in range(len(keep)) if index not in candidate_holdout_indices
+    ]
     candidate_refs = np.stack(
-        [vector for index, vector in enumerate(keep) if index not in candidate_holdout_indices]
+        [keep[index] for index in candidate_reference_indices]
     )
     candidate_heldouts = (
         np.stack([keep[index] for index in sorted(candidate_holdout_indices)])
@@ -712,12 +717,27 @@ def promote_candidate(
     )
     old_refs = current["arrays"]["references"]
     old_heldouts = current["arrays"]["heldouts"]
+    old_provenance = store._profile_provenance(current)
+    candidate_windows = list(candidate.get("windows") or [])
+    kept_windows = [
+        candidate_windows[int(index)] if int(index) < len(candidate_windows) else {}
+        for index in keep_indices
+    ]
+    candidate_ref_windows = [kept_windows[index] for index in candidate_reference_indices]
+    candidate_holdout_windows = (
+        [kept_windows[index] for index in sorted(candidate_holdout_indices)]
+        if candidate_holdout_indices
+        else [kept_windows[-1]]
+    )
     combined_refs = np.concatenate([old_refs, candidate_refs]).astype(np.float32)
+    combined_ref_windows = list(old_provenance["references"]) + candidate_ref_windows
     max_refs = int(PIPELINE_CONFIG["max_promoted_references"])
     if len(combined_refs) > max_refs:
         indices = np.linspace(0, len(combined_refs) - 1, max_refs, dtype=int)
         combined_refs = combined_refs[indices]
+        combined_ref_windows = [combined_ref_windows[int(index)] for index in indices]
     combined_heldouts = np.concatenate([old_heldouts, candidate_heldouts]).astype(np.float32)
+    combined_holdout_windows = list(old_provenance["heldouts"]) + candidate_holdout_windows
     new_center = normalize(np.mean(combined_refs, axis=0))
     old_weights = current["arrays"].get(
         "quality_weights", np.ones(len(old_refs), dtype=np.float32)
@@ -725,6 +745,47 @@ def promote_candidate(
     weights = np.concatenate(
         [old_weights[: len(old_refs)], np.ones(len(candidate_refs), dtype=np.float32)]
     )[: len(combined_refs)]
+    vector_provenance = {
+        "references": [
+            {
+                **window,
+                "window_id": f"ref-{index:04d}",
+                "array_kind": "references",
+                "array_index": index,
+            }
+            for index, window in enumerate(combined_ref_windows)
+        ],
+        "heldouts": [
+            {
+                **window,
+                "window_id": f"holdout-{index:04d}",
+                "array_kind": "heldouts",
+                "array_index": index,
+            }
+            for index, window in enumerate(combined_holdout_windows)
+        ],
+    }
+    candidate_source_records: list[dict[str, Any]] = []
+    source_root = store.customer_source_dir(customer_id).resolve()
+    for source in candidate.get("sources") or [candidate.get("source") or {}]:
+        if not isinstance(source, dict):
+            continue
+        record = {
+            key: source.get(key)
+            for key in (
+                "source_id", "meeting_id", "title", "audio_sha256", "transcript_sha256"
+            )
+            if source.get(key) not in {None, ""}
+        }
+        record["customer_id"] = customer_id
+        for source_key, target_key in (
+            ("audio_path", "audio_relative_path"),
+            ("transcript_path", "transcript_relative_path"),
+        ):
+            with contextlib.suppress(Exception):
+                record[target_key] = str(Path(source[source_key]).resolve().relative_to(source_root))
+        candidate_source_records.append(record)
+    sources = store._safe_sources(current["manifest"]) + candidate_source_records
     profile_manifest = {
         "model": current["manifest"]["model"],
         "review_session_id": candidate.get("review_session_id"),
@@ -736,18 +797,24 @@ def promote_candidate(
             "median_similarity_to_previous_center": consistency,
         },
         "previous_version": current["version"],
-        "sources": current["manifest"].get("sources", [])
-        + [
-            {
-                "kind": "confirmed_profile_candidate",
-                "candidate_id": candidate["candidate_id"],
-                "run_id": candidate["run_id"],
-                "audio_sha256": candidate.get("source", {}).get("audio_sha256"),
-            }
-        ],
+        "parent_version": current["version"],
+        "creation_mode": "promotion",
+        "sources": sources + [{
+            "kind": "confirmed_profile_candidate",
+            "candidate_id": candidate["candidate_id"],
+            "run_id": candidate["run_id"],
+            "audio_sha256": candidate.get("source", {}).get("audio_sha256"),
+        }],
+        "registration": {
+            "source_recordings": sources,
+            "source_windows": combined_ref_windows + combined_holdout_windows,
+        },
+        "vector_provenance": vector_provenance,
         "statistics": {
             "reference_count": len(combined_refs),
             "holdout_count": len(combined_heldouts),
+            "reference_seconds": float(sum(float(item.get("duration") or 0.0) for item in combined_ref_windows)),
+            "holdout_seconds": float(sum(float(item.get("duration") or 0.0) for item in combined_holdout_windows)),
         },
     }
     if confirmed_by:

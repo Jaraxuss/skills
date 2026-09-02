@@ -11,7 +11,7 @@ Use the deterministic CLI in `scripts/speaker_insights.py` for audio processing,
 
 - For a new customer or new person, read [references/review-console.md](references/review-console.md) and [references/schemas.md](references/schemas.md). Create an `enroll review-create` session and return its review URL. Do not conduct per-label confirmation in chat or run `enroll commit` unless an administrator explicitly requests the legacy CLI path.
 - For a later recording, run `analyze acoustic`, read the generated transcript index, autonomously extract anchored context evidence and per-label viewpoints, then run `analyze finalize`. Do not pause for threshold selection or ask the user to fill semantic JSON.
-- For profile maintenance, list candidates first. Create `profile review-create` for a pending candidate; the browser confirmation authorizes promotion. `profile rollback` and `profile quarantine` remain explicit administrator actions.
+- For profile maintenance, read [references/review-console.md](references/review-console.md). Use the browser catalogue and immutable version panel for source inspection, current-version switching, disabling, and enabling. Create a `profile_revision` review task before retaining or excluding historical windows; direct fork is a compatibility-only administrative path. List candidates first and create `profile review-create` for pending expansion audio.
 - For setup, migration, the review service, or failures, read [references/deployment.md](references/deployment.md) and run `doctor`.
 - For confidence and conflict handling, read [references/identity-resolution.md](references/identity-resolution.md).
 
@@ -27,6 +27,7 @@ Use the deterministic CLI in `scripts/speaker_insights.py` for audio processing,
 - Anchor every context item and viewpoint to an existing transcript label and timestamp. If validation fails, repair it from the transcript or report the failure; never invent evidence.
 - Cover every transcript label with at least one grounded core viewpoint or `发言摘要`, whether the label is known, unknown, mixed, or outside the voiceprint cohort. The only exception is grounded background/noise/incidental speech recorded in `non_substantive_labels`. Never finalize an empty viewpoint artifact.
 - Do not retain cropped WAV files. Keep original audio unchanged and store only hashes, timestamps, embeddings, metadata, and reports.
+- Keep every `vNNNN` immutable. Switching changes only the current-version pointer; disabling preserves that pointer and every version. A fork always allocates after the highest historical version and never overwrites its base.
 - The review HTTP service is LAN-local only. Do not expose it to the public Internet or add an unauthorised remote proxy.
 
 ## Normal workflow
