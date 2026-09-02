@@ -163,10 +163,37 @@ class DataStore:
                     created_at TEXT NOT NULL,
                     FOREIGN KEY(session_id) REFERENCES review_sessions(session_id)
                 );
+                CREATE TABLE IF NOT EXISTS task_executions (
+                    task_id TEXT PRIMARY KEY,
+                    operation TEXT NOT NULL,
+                    customer_id TEXT NOT NULL,
+                    external_request_id TEXT,
+                    request_hash TEXT NOT NULL UNIQUE,
+                    source_hash TEXT NOT NULL,
+                    pipeline_hash TEXT NOT NULL,
+                    cohort_hash TEXT,
+                    semantic_hash TEXT,
+                    status TEXT NOT NULL,
+                    phase TEXT NOT NULL,
+                    checkpoint_json TEXT,
+                    artifact_dir_uri TEXT NOT NULL,
+                    result_path TEXT,
+                    lease_owner TEXT,
+                    lease_expires_at TEXT,
+                    heartbeat_at TEXT,
+                    error_code TEXT,
+                    error_details_json TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    completed_at TEXT,
+                    FOREIGN KEY(customer_id) REFERENCES customers(customer_id)
+                );
                 CREATE INDEX IF NOT EXISTS review_sessions_customer_status
                     ON review_sessions(customer_id, status, updated_at DESC);
                 CREATE INDEX IF NOT EXISTS review_jobs_status_created
                     ON review_jobs(status, created_at);
+                CREATE INDEX IF NOT EXISTS task_executions_customer_status
+                    ON task_executions(customer_id, status, updated_at DESC);
                 """
             )
             self._add_column(db, "customers", "directory_relpath TEXT")
@@ -221,6 +248,9 @@ class DataStore:
         if row is None or not row["directory_relpath"]:
             raise KeyError(f"Customer {customer_id} has no bound directory")
         return self._customer_dir_from_relpath(str(row["directory_relpath"]))
+
+    def task_dir(self, customer_id: str, task_id: str) -> Path:
+        return ensure_private_dir(self.customer_dir(customer_id) / "agent-tasks" / task_id)
 
     def staff_dir(self) -> Path:
         return ensure_private_dir(self.root / "staff")
@@ -826,6 +856,200 @@ class DataStore:
                 "UPDATE runs SET status = ?, updated_at = ? WHERE run_id = ?",
                 (status, now_iso(), run_id),
             )
+
+    @staticmethod
+    def _hydrate_task(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
+        value = dict(row)
+        for source, target in (
+            ("checkpoint_json", "checkpoint"),
+            ("error_details_json", "error_details"),
+        ):
+            raw = value.pop(source, None)
+            try:
+                value[target] = json.loads(raw) if raw else None
+            except json.JSONDecodeError:
+                value[target] = None
+        return value
+
+    def get_task(self, task_id: str) -> dict[str, Any]:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT * FROM task_executions WHERE task_id = ?", (task_id,)
+            ).fetchone()
+        if row is None:
+            raise KeyError(task_id)
+        value = self._hydrate_task(row)
+        value["artifact_dir"] = str(
+            self.resolve_storage_path(str(value["artifact_dir_uri"]), value["customer_id"])
+        )
+        if value.get("result_path"):
+            value["result_path"] = str(
+                self.resolve_storage_path(str(value["result_path"]), value["customer_id"])
+            )
+        return value
+
+    def find_task_by_request_hash(self, request_hash: str) -> dict[str, Any] | None:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT task_id FROM task_executions WHERE request_hash = ?", (request_hash,)
+            ).fetchone()
+        return self.get_task(str(row["task_id"])) if row is not None else None
+
+    def create_or_reuse_task(
+        self,
+        *,
+        task_id: str,
+        operation: str,
+        customer_id: str,
+        request_hash: str,
+        source_hash: str,
+        pipeline_hash: str,
+        cohort_hash: str | None,
+        external_request_id: str | None = None,
+    ) -> tuple[dict[str, Any], bool]:
+        existing = self.find_task_by_request_hash(request_hash)
+        if existing is not None:
+            return existing, True
+        artifact_dir = self.task_dir(customer_id, task_id)
+        now = now_iso()
+        try:
+            with self.connect() as db:
+                db.execute(
+                    """
+                    INSERT INTO task_executions(
+                        task_id, operation, customer_id, external_request_id,
+                        request_hash, source_hash, pipeline_hash, cohort_hash,
+                        status, phase, checkpoint_json, artifact_dir_uri,
+                        created_at, updated_at
+                    ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, 'created', 'created', ?, ?, ?, ?)
+                    """,
+                    (
+                        task_id,
+                        operation,
+                        customer_id,
+                        external_request_id,
+                        request_hash,
+                        source_hash,
+                        pipeline_hash,
+                        cohort_hash,
+                        json.dumps({}, ensure_ascii=False),
+                        self.storage_uri(artifact_dir, customer_id),
+                        now,
+                        now,
+                    ),
+                )
+        except sqlite3.IntegrityError:
+            existing = self.find_task_by_request_hash(request_hash)
+            if existing is None:
+                raise
+            return existing, True
+        return self.get_task(task_id), False
+
+    def update_task(
+        self,
+        task_id: str,
+        *,
+        status: str | None = None,
+        phase: str | None = None,
+        checkpoint: dict[str, Any] | None = None,
+        result_path: Path | None = None,
+        semantic_hash: str | None = None,
+        error_code: str | None = None,
+        error_details: dict[str, Any] | None = None,
+        completed: bool = False,
+    ) -> dict[str, Any]:
+        task = self.get_task(task_id)
+        fields: dict[str, Any] = {"updated_at": now_iso()}
+        if status is not None:
+            fields["status"] = status
+        if phase is not None:
+            fields["phase"] = phase
+        if checkpoint is not None:
+            fields["checkpoint_json"] = json.dumps(checkpoint, ensure_ascii=False)
+        if result_path is not None:
+            fields["result_path"] = self.storage_uri(result_path, task["customer_id"])
+        if semantic_hash is not None:
+            fields["semantic_hash"] = semantic_hash
+        if error_code is not None:
+            fields["error_code"] = error_code
+        if error_details is not None:
+            fields["error_details_json"] = json.dumps(error_details, ensure_ascii=False)
+        if status in {
+            "awaiting_semantic",
+            "waiting_worker",
+            "waiting_confirmation",
+            "completed",
+            "failed",
+            "cancelled",
+        }:
+            fields["lease_owner"] = None
+            fields["lease_expires_at"] = None
+        if completed:
+            fields["completed_at"] = now_iso()
+        if error_code is None and error_details is None and status in {
+            "running",
+            "awaiting_semantic",
+            "waiting_worker",
+            "waiting_confirmation",
+            "completed",
+        }:
+            fields["error_code"] = None
+            fields["error_details_json"] = None
+        assignments = ", ".join(f"{key} = ?" for key in fields)
+        with self.connect() as db:
+            db.execute(
+                f"UPDATE task_executions SET {assignments} WHERE task_id = ?",
+                (*fields.values(), task_id),
+            )
+        return self.get_task(task_id)
+
+    def claim_task(self, task_id: str, owner: str, lease_seconds: int = 900) -> dict[str, Any]:
+        """Acquire or renew a task lease so retries cannot run duplicate workers."""
+        now = datetime.now(timezone.utc)
+        expires = now + timedelta(seconds=max(30, int(lease_seconds)))
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT lease_owner, lease_expires_at FROM task_executions WHERE task_id = ?",
+                (task_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(task_id)
+            active = False
+            if row["lease_owner"] and row["lease_expires_at"]:
+                try:
+                    active = datetime.fromisoformat(
+                        str(row["lease_expires_at"]).replace("Z", "+00:00")
+                    ) > now
+                except ValueError:
+                    active = False
+            if active and str(row["lease_owner"]) != owner:
+                raise RuntimeError("task_already_running")
+            db.execute(
+                """
+                UPDATE task_executions
+                SET lease_owner = ?, lease_expires_at = ?, heartbeat_at = ?,
+                    status = 'running', updated_at = ?
+                WHERE task_id = ?
+                """,
+                (owner, expires.isoformat(), now.isoformat(), now.isoformat(), task_id),
+            )
+            db.commit()
+        return self.get_task(task_id)
+
+    def heartbeat_task(self, task_id: str, owner: str, lease_seconds: int = 900) -> None:
+        now = datetime.now(timezone.utc)
+        expires = now + timedelta(seconds=max(30, int(lease_seconds)))
+        with self.connect() as db:
+            changed = db.execute(
+                """
+                UPDATE task_executions SET heartbeat_at = ?, lease_expires_at = ?, updated_at = ?
+                WHERE task_id = ? AND lease_owner = ?
+                """,
+                (now.isoformat(), expires.isoformat(), now.isoformat(), task_id, owner),
+            ).rowcount
+        if changed != 1:
+            raise RuntimeError("task_lease_lost")
 
     def enrollment_dir(self, customer_id: str, enrollment_id: str) -> Path:
         return ensure_private_dir(
@@ -1517,6 +1741,63 @@ class DataStore:
             self._audit(db, "review_job_claimed", row["session_id"], new_value={"job_id": row["job_id"]})
             db.commit()
             return dict(row)
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
+    def claim_review_job_for_session(self, session_id: str) -> dict[str, Any] | None:
+        """Atomically claim the preparation job belonging to one known session."""
+        db = self.connect()
+        try:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT * FROM review_jobs WHERE session_id = ? ORDER BY created_at DESC LIMIT 1",
+                (session_id,),
+            ).fetchone()
+            if row is None:
+                db.commit()
+                return None
+            if row["status"] == "running":
+                db.commit()
+                return None
+            if row["status"] != "queued":
+                db.commit()
+                return dict(row)
+            now = now_iso()
+            changed = db.execute(
+                """
+                UPDATE review_jobs SET status = 'running', started_at = ?, updated_at = ?,
+                    progress_json = ? WHERE job_id = ? AND status = 'queued'
+                """,
+                (
+                    now,
+                    now,
+                    json.dumps(
+                        {"phase": "starting", "message": "正在启动本地声纹处理…"},
+                        ensure_ascii=False,
+                    ),
+                    row["job_id"],
+                ),
+            ).rowcount
+            if changed != 1:
+                db.rollback()
+                return None
+            db.execute(
+                "UPDATE review_sessions SET status = 'preparing', updated_at = ? WHERE session_id = ?",
+                (now, session_id),
+            )
+            self._audit(
+                db,
+                "review_job_claimed",
+                session_id,
+                new_value={"job_id": row["job_id"], "agent_direct": True},
+            )
+            db.commit()
+            value = dict(row)
+            value["status"] = "running"
+            return value
         except Exception:
             db.rollback()
             raise

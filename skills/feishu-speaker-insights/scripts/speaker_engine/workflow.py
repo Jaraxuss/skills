@@ -4,6 +4,7 @@ import contextlib
 import hashlib
 import json
 import tempfile
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +13,7 @@ import soundfile as sf
 
 from .constants import MODEL_CONFIG, PIPELINE_CONFIG
 from .embedding import EmbeddingEngine, normalize
+from .errors import StructuredError
 from .matching import build_profile_arrays, calibrate_profiles, match_label
 from .reporting import write_outputs
 from .resolution import (
@@ -70,7 +72,7 @@ def load_manifest(path: Path) -> dict[str, Any]:
 
 
 def make_run_id(meeting_id: str, kind: str) -> str:
-    suffix = hashlib.sha256(f"{meeting_id}\0{kind}\0{now_iso()}".encode()).hexdigest()[:8]
+    suffix = uuid.uuid4().hex[:8]
     return f"{safe_component(meeting_id, 'meeting')}-{kind}-{utc_compact()}-{suffix}"
 
 
@@ -186,12 +188,56 @@ def _calibration_for_profiles(
     customer_id: str,
     profiles: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
-    calibration = calibrate_profiles(profiles)
     cohort = sorted(f"{person_id}:v{profile['version']}" for person_id, profile in profiles.items())
-    cohort_hash = hashlib.sha256("\n".join(cohort).encode()).hexdigest()[:16]
+    fingerprint = {
+        "calibration_schema": 1,
+        "model": MODEL_CONFIG,
+        "threshold_defaults": {
+            "accept": PIPELINE_CONFIG["default_accept_threshold"],
+            "margin": PIPELINE_CONFIG["default_margin_threshold"],
+            "minimum_margin_floor": PIPELINE_CONFIG["minimum_margin_floor"],
+        },
+        "profiles": [
+            {
+                "person_id": person_id,
+                "version": int(profile["version"]),
+                "npz_sha256": sha256_file(Path(profile["npz_path"])),
+            }
+            for person_id, profile in sorted(profiles.items())
+        ],
+    }
+    cohort_hash = hashlib.sha256(
+        json.dumps(fingerprint, ensure_ascii=False, sort_keys=True).encode()
+    ).hexdigest()[:16]
     cache_dir = store.customer_dir(customer_id) / "calibrations"
-    payload = {**calibration, "cohort": cohort, "cohort_hash": cohort_hash}
-    atomic_write_json(cache_dir / f"{cohort_hash}.json", payload)
+    cache_path = cache_dir / f"{cohort_hash}.json"
+    if cache_path.is_file():
+        cached = load_structured(cache_path)
+        required = {
+            "accept_threshold",
+            "margin_threshold",
+            "source",
+            "cohort",
+            "cohort_hash",
+            "fingerprint",
+        }
+        if (
+            required.issubset(cached)
+            and cached.get("cohort") == cohort
+            and cached.get("cohort_hash") == cohort_hash
+            and cached.get("fingerprint") == fingerprint
+        ):
+            return {**cached, "cache_hit": True, "cache_path": str(cache_path)}
+    calibration = calibrate_profiles(profiles)
+    payload = {
+        **calibration,
+        "cohort": cohort,
+        "cohort_hash": cohort_hash,
+        "fingerprint": fingerprint,
+        "cache_hit": False,
+        "cache_path": str(cache_path),
+    }
+    atomic_write_json(cache_path, payload)
     return payload
 
 
@@ -550,9 +596,11 @@ def analyze_finalize(
     bundle = load_structured(run_dir / "acoustic_bundle.json")
     index = load_structured(run_dir / "transcript_index.json")
     if viewpoints_path is None:
-        raise ValueError(
-            "--viewpoints is required and must cover every transcript label; "
-            "use a grounded background/incidental classification only when appropriate"
+        raise StructuredError(
+            "VIEWPOINTS_REQUIRED",
+            "必须提供覆盖全部转写标签的观点数据。",
+            details={"required_labels": list(index.get("labels", {}))},
+            retryable=True,
         )
     context_payload = (
         load_structured(context_path.resolve())

@@ -9,6 +9,16 @@ from pathlib import Path
 from typing import Any
 
 from speaker_engine.embedding import doctor as embedding_doctor
+from speaker_engine.agent import (
+    agent_analysis_correct,
+    agent_analyze_complete,
+    agent_analyze_start,
+    agent_enroll_confirm,
+    agent_enroll_start,
+    agent_task_status,
+    capabilities,
+)
+from speaker_engine.errors import StructuredError
 from speaker_engine.util import cache_root, customers_root, data_root
 from speaker_engine.storage import DataStore
 from speaker_engine.migration import apply_layout_migration, layout_migration_plan
@@ -114,6 +124,7 @@ def build_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
 
     commands.add_parser("paths", help="Show resolved skill, data, and cache paths")
+    commands.add_parser("capabilities", help="Show stable engine and agent API capabilities")
     doctor = commands.add_parser("doctor", help="Check the CPU runtime and pinned model")
     doctor.add_argument(
         "--download",
@@ -219,6 +230,26 @@ def build_parser() -> argparse.ArgumentParser:
     review_commit.add_argument("--revision", type=int, required=True)
     review_commit.add_argument("--confirmed-by")
 
+    agent = commands.add_parser("agent", help="Stable high-level commands for OpenClaw and similar agents")
+    agent_commands = agent.add_subparsers(dest="agent_command", required=True)
+    agent_enroll_start_parser = agent_commands.add_parser("enroll-start")
+    agent_enroll_start_parser.add_argument("--request", type=Path, required=True)
+    agent_enroll_start_parser.add_argument("--base-url")
+    agent_enroll_start_parser.add_argument("--download", action="store_true")
+    agent_enroll_confirm_parser = agent_commands.add_parser("enroll-confirm")
+    agent_enroll_confirm_parser.add_argument("--request", type=Path, required=True)
+    agent_analyze_start_parser = agent_commands.add_parser("analyze-start")
+    agent_analyze_start_parser.add_argument("--request", type=Path, required=True)
+    agent_analyze_start_parser.add_argument("--download", action="store_true")
+    agent_analyze_complete_parser = agent_commands.add_parser("analyze-complete")
+    agent_analyze_complete_parser.add_argument("--task", required=True)
+    agent_analyze_complete_parser.add_argument("--semantic-response", type=Path, required=True)
+    agent_status_parser = agent_commands.add_parser("task-status")
+    agent_status_parser.add_argument("--task", required=True)
+    agent_correct_parser = agent_commands.add_parser("analysis-correct")
+    agent_correct_parser.add_argument("--task", required=True)
+    agent_correct_parser.add_argument("--corrections", type=Path, required=True)
+
     migrate = commands.add_parser("migrate", help="Copy legacy speaker data into the customer-root layout")
     migrate_commands = migrate.add_subparsers(dest="migrate_command", required=True)
     layout = migrate_commands.add_parser("layout")
@@ -233,6 +264,8 @@ def build_parser() -> argparse.ArgumentParser:
 def dispatch(args: argparse.Namespace) -> dict[str, Any]:
     if args.command == "paths":
         return paths_command(args)
+    if args.command == "capabilities":
+        return capabilities()
     if args.command == "doctor":
         return doctor_command(args)
     if args.command == "migrate" and args.migrate_command == "layout":
@@ -242,6 +275,23 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
             else layout_migration_plan(args.from_data_dir, args.customers_root)
         )
     store = make_store(args)
+    if args.command == "agent" and args.agent_command == "enroll-start":
+        return agent_enroll_start(
+            args.request,
+            store,
+            base_url=args.base_url,
+            download=args.download,
+        )
+    if args.command == "agent" and args.agent_command == "enroll-confirm":
+        return agent_enroll_confirm(args.request, store)
+    if args.command == "agent" and args.agent_command == "analyze-start":
+        return agent_analyze_start(args.request, store, download=args.download)
+    if args.command == "agent" and args.agent_command == "analyze-complete":
+        return agent_analyze_complete(args.task, args.semantic_response, store)
+    if args.command == "agent" and args.agent_command == "task-status":
+        return agent_task_status(args.task, store)
+    if args.command == "agent" and args.agent_command == "analysis-correct":
+        return agent_analysis_correct(args.task, args.corrections, store)
     if args.command == "customer" and args.customer_command == "upsert":
         return customer_upsert(args.manifest, store)
     if args.command == "enroll" and args.enroll_command == "prepare":
@@ -344,6 +394,9 @@ def main() -> None:
     args = parser.parse_args()
     try:
         emit(dispatch(args))
+    except StructuredError as exc:
+        emit(exc.to_dict())
+        raise SystemExit(2) from exc
     except Exception as exc:
         emit({"ok": False, "error": type(exc).__name__, "message": str(exc)})
         raise SystemExit(1) from exc

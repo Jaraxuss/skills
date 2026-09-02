@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .errors import StructuredError
 from .util import normalize_text
 
 
@@ -240,9 +241,11 @@ def ensure_viewpoint_coverage(
     covered.update(item["transcript_label"] for item in non_substantive)
     missing = [label for label in transcript_index.get("labels", {}) if label not in covered]
     if missing:
-        raise ValueError(
-            "Every transcript label requires a grounded viewpoint or a grounded "
-            "background/incidental classification; missing: " + ", ".join(missing)
+        raise StructuredError(
+            "MISSING_VIEWPOINT_LABELS",
+            "每个转写标签都必须包含可回查的核心观点、发言摘要或非实质发言说明。",
+            details={"missing_labels": missing},
+            retryable=True,
         )
 
 

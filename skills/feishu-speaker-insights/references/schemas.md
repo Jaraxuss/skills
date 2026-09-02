@@ -1,8 +1,8 @@
-# Schemas and command flow
+# 数据格式与命令流程
 
 Read this reference when creating a customer, enrolling profiles, analyzing a meeting, or generating semantic JSON.
 
-## Meeting manifest
+## 会议清单
 
 YAML and JSON are accepted. Paths must be absolute.
 
@@ -30,9 +30,9 @@ excluded_labels:
   - 说话人 5
 ```
 
-`organization` must be `customer`, `yingdao`, or `external`. External attendees are metadata only and are not enrolled unless explicitly changed to one of the first two scopes.
+`organization` 只能是 `customer`、`yingdao` 或 `external`。外部参会人仅作为元数据，不会建库；需要建库时必须明确改为客户或我方。
 
-## Enrollment confirmation
+## 旧版 CLI 建库确认
 
 `enroll prepare` creates `enrollment_draft.json`. After showing one consolidated mapping table to the user, create:
 
@@ -47,11 +47,15 @@ excluded_labels:
   - 外部支持人员
 ```
 
-Every mapped name must resolve exactly to an attendee. Confirmation is required even when `known_label_map` supplied the proposal.
+每个映射姓名都必须精确对应参会人。即使 `known_label_map` 已提供建议，旧流程仍需确认。OpenClaw 默认不要使用这个两阶段旧接口，改用 [Agent 工作流](agent-workflows.md)。
 
-## Browser enrollment review (default)
+## Agent 建库与分析（OpenClaw 默认）
 
-The review console replaces the chat-based confirmation flow for normal use. Create a session from the same meeting manifest:
+首次建库使用 `agent enroll-start` 与 `agent enroll-confirm`；后续录音使用 `agent analyze-start` 与 `agent analyze-complete`。用户不输入技术任务 ID，OpenClaw 从首次命令结果中保存并在后续内部调用时传回。请求、确认绑定、幂等恢复和固定飞书消息格式见 [Agent 工作流](agent-workflows.md)。
+
+## 浏览器建库审核（复杂任务）
+
+多人员、超过三组候选、红色风险或需要逐片段处理的任务使用审核台。也可以由用户主动指定网页审核。使用同一清单创建会话：
 
 ```text
 speaker_insights.py --customers-root /path/to/客户 enroll review-create \
@@ -73,7 +77,7 @@ It returns `session_id`, `queued`, and `review_url`. The Worker stores its tempo
 
 `pending_vectors.npz` is not a profile and is removed after cancellation, expiration, or successful commit. The browser decision contains a server revision and assignments from `segment_id` to a person ID, `unknown`, `background`, or `skip`. It may contain `new_people`, with name and role. The server is the only component that turns selected windows into `vNNNN`.
 
-## Context evidence
+## 上下文证据
 
 Create one item only when its timestamp and excerpt can be checked in the transcript index.
 
@@ -94,13 +98,13 @@ Create one item only when its timestamp and excerpt can be checked in the transc
 }
 ```
 
-Allowed strengths: `strong`, `medium`, `weak`. Semantic input types: `self_identification`, `direct_address_response`, `explicit_address`, `role_semantics`, `third_party_reference`. The engine may additionally emit deterministic `exact_named_label` evidence when a transcript label exactly matches a candidate person.
+允许的强度：`strong`、`medium`、`weak`。语义类型：`self_identification`、`direct_address_response`、`explicit_address`、`role_semantics`、`third_party_reference`。转写标签与候选人姓名完全一致时，引擎还会生成确定性的 `exact_named_label` 证据。
 
-The evidence timestamp belongs to `source_label`; `target_label` is the speaker label whose identity it supports.
+证据时间戳属于 `source_label`；`target_label` 是该证据所支持的待识别标签。
 
-`supported_person` normally names someone in the voiceprint candidate cohort. It may name a person outside that cohort only when the supplied excerpt explicitly grounds the name, such as a self-introduction or direct address. Role semantics cannot introduce a new identity.
+`supported_person` 通常必须属于本次声纹候选集。只有原文明确出现姓名的自我介绍或直接称呼，才允许指向候选集外人员；职位语义不能引入新身份。
 
-## Viewpoints
+## 核心观点
 
 Write viewpoints by original transcript label. Finalization groups labels only after identity resolution.
 
@@ -119,9 +123,9 @@ Write viewpoints by original transcript label. Finalization groups labels only a
 }
 ```
 
-Allowed categories: `主张`, `需求`, `担忧`, `决策`, `行动项`, `发言摘要`. Produce two to five substantive points per resolved person when the transcript supports them. When speech is meaningful but too sparse for an independent viewpoint, produce one grounded `发言摘要`; unknown speakers follow the same rule.
+允许类别：`主张`、`需求`、`担忧`、`决策`、`行动项`、`发言摘要`。原文充足时，每位已识别人员输出 2–5 条实质观点；发言有意义但不足以形成独立观点时，至少输出一条有原文依据的 `发言摘要`。未知说话人也遵循同一规则。
 
-Every original label must be covered. Only genuine background, incidental speech, device playback, or noise may be excluded from viewpoints, and the exclusion must still be grounded:
+每个原始标签都必须覆盖。只有真正的背景声、偶发路人发言、设备播放或杂音可以排除在观点之外，而且排除理由仍须能回查原文：
 
 ```json
 {
@@ -139,17 +143,28 @@ Every original label must be covered. Only genuine background, incidental speech
 }
 ```
 
-`analyze finalize` rejects missing label coverage. Do not pass the empty template through unchanged.
+`analyze finalize` 会拒绝缺失标签。不能把空模板原样提交。
 
-## Start-only transcript timing
+## 只有开始时间的转写
 
-Feishu Minutes exports commonly provide only a start timestamp. No `stop_time` is required. For each row, the engine estimates a conservative duration from its text, caps it at the next row start and a fixed maximum, then uses adaptive energy VAD inside that span. It does not assign the entire gap to the preceding label. Explicit `[start - stop] label` rows remain supported when another exporter supplies them.
+飞书妙记通常只导出开始时间，不要求 `stop_time`。引擎根据文本估算保守时长，并受下一行开始时间和固定上限约束，再在该区间内运行自适应能量 VAD；不会把整段空白都归给上一位说话人。其他导出器提供的 `[start - stop] label` 格式仍兼容。
 
-## Commands
+## 命令
 
 ```text
 speaker_insights.py paths
 speaker_insights.py doctor [--download]
+speaker_insights.py capabilities
+
+# OpenClaw / Agent 稳定接口
+speaker_insights.py agent enroll-start --request REQUEST.json [--base-url URL]
+speaker_insights.py agent enroll-confirm --request CONFIRMATION.json
+speaker_insights.py agent analyze-start --request REQUEST.json
+speaker_insights.py agent analyze-complete --task TASK_ID --semantic-response SEMANTIC.json
+speaker_insights.py agent task-status --task TASK_ID
+speaker_insights.py agent analysis-correct --task TASK_ID --corrections CORRECTIONS.json
+
+# 兼容及管理员接口
 speaker_insights.py customer upsert --manifest MEETING.yaml
 speaker_insights.py enroll prepare --manifest MEETING.yaml
 speaker_insights.py enroll commit --draft enrollment_draft.json --confirmation confirmation.yaml
@@ -163,8 +178,6 @@ speaker_insights.py profile disable --person PERSON_ID
 speaker_insights.py profile enable --person PERSON_ID
 speaker_insights.py profile fork --person PERSON_ID --base-version 1 [--window-ids retained.json] [--keep-current]
 speaker_insights.py profile revision-review-create --person PERSON_ID --base-version 1 [--base-url URL]
-
-旧的 `profile rollback` 和 `profile quarantine` 仅保留为兼容入口；新流程使用“设为当前版本”和“停用”，不会删除历史版本或清空当前版本指针。
 speaker_insights.py enroll review-create --manifest MEETING.yaml [--base-url URL]
 speaker_insights.py enroll review-status --session SESSION_ID
 speaker_insights.py enroll review-cancel --session SESSION_ID
@@ -174,4 +187,6 @@ speaker_insights.py migrate layout --from-data-dir OLD --customers-root NEW --dr
 speaker_insights.py migrate layout --from-data-dir OLD --customers-root NEW --apply
 ```
 
-Commands print a final JSON object containing output paths so an agent does not have to infer them from terminal prose.
+旧的 `profile rollback` 和 `profile quarantine` 仅保留为兼容入口；新流程使用“设为当前版本”和“停用”，不会删除历史版本或清空当前版本指针。
+
+命令最终输出单个包含产物路径的 JSON 对象，Agent 不需要从终端自然语言中猜测结果。

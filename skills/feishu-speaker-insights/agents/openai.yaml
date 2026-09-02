@@ -1,6 +1,6 @@
 interface:
   display_name: "飞书妙记声纹与观点"
   short_description: "用本地声纹识别妙记说话人并整理个人观点"
-  default_prompt: "Use $feishu-speaker-insights to create a browser review session for any new customer voiceprint enrollment, return its local review URL, and for later local Feishu Minutes recordings identify every speaker with Top-1 and Top-2 voiceprint evidence plus grounded viewpoints or a justified background classification for every label."
+  default_prompt: "使用 $feishu-speaker-insights：简单单人首次建库优先走飞书合并试听与明确消息确认，复杂任务转本地审核台；后续妙记录音用稳定 Agent 接口识别全部标签，输出 Top-1/Top-2 声纹证据、每人核心观点和固定飞书简报。技术任务 ID 只在 Agent 内部传递。"
 policy:
   allow_implicit_invocation: true

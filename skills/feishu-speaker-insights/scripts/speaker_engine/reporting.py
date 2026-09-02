@@ -84,6 +84,118 @@ def group_viewpoints(
     return list(groups.values())
 
 
+def build_feishu_summary(
+    bundle: dict[str, Any],
+    resolved: list[dict[str, Any]],
+    grouped: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Build a stable compact payload; OpenClaw should not invent report layout."""
+    people = {item["person_id"]: item for item in bundle["candidate_people"]}
+    rows_by_label = {row["transcript_label"]: row for row in resolved}
+    speakers: list[dict[str, Any]] = []
+    warnings: list[dict[str, Any]] = []
+    message_lines = [f"**{bundle['meeting']['title']}｜说话人识别与核心观点**", ""]
+    for group in grouped:
+        rows = [rows_by_label[label] for label in group["labels"] if label in rows_by_label]
+        statuses = list(dict.fromkeys(str(row["final_status"]) for row in rows))
+        confidences = list(dict.fromkeys(str(row["final_confidence"]) for row in rows))
+        matches = []
+        for row in rows:
+            matches.append(
+                {
+                    "transcript_label": row["transcript_label"],
+                    "status": row["final_status"],
+                    "confidence": row["final_confidence"],
+                    "top1": {
+                        "person_id": row.get("top1_person_id"),
+                        "name": person_name(row.get("top1_person_id"), people),
+                        "score": row.get("top1_score"),
+                    },
+                    "top2": {
+                        "person_id": row.get("top2_person_id"),
+                        "name": person_name(row.get("top2_person_id"), people),
+                        "score": row.get("top2_score"),
+                    },
+                    "score_margin": row.get("score_margin"),
+                    "usable_windows": row.get("usable_windows"),
+                    "usable_seconds": row.get("usable_seconds"),
+                    "needs_review": bool(row.get("needs_review")),
+                    "voice_context_conflict": bool(row.get("voice_context_conflict")),
+                }
+            )
+            if row.get("needs_review") or row.get("voice_context_conflict") or row.get("final_status") in {
+                "未知",
+                "混合/不确定",
+                "匹配倾向但证据不足",
+                "有效语音不足",
+            }:
+                warnings.append(
+                    {
+                        "transcript_label": row["transcript_label"],
+                        "status": row["final_status"],
+                        "reason": "；".join(row.get("notes", [])) or row.get("decision_basis"),
+                    }
+                )
+        viewpoints = [
+            {
+                "timestamp": item["timestamp"],
+                "category": item["category"],
+                "point": item["point"],
+            }
+            for item in group["items"]
+        ]
+        non_substantive = [
+            {
+                "timestamp": item["timestamp"],
+                "reason": item["reason"],
+            }
+            for item in group["non_substantive"]
+        ]
+        speaker = {
+            "identity": group["identity"],
+            "person_id": group.get("person_id"),
+            "transcript_labels": group["labels"],
+            "statuses": statuses,
+            "confidences": confidences,
+            "matches": matches,
+            "viewpoints": viewpoints,
+            "non_substantive": non_substantive,
+        }
+        speakers.append(speaker)
+        status_text = "、".join(statuses) or "未知"
+        confidence_text = "、".join(confidences) or "低"
+        message_lines.append(f"**{group['identity']}｜{status_text}·{confidence_text}**")
+        for match in matches:
+            first = match["top1"]
+            second = match["top2"]
+            ranking = f"{first['name']} {score(first['score'])}"
+            if second["person_id"] is not None:
+                ranking += f"；{second['name']} {score(second['score'])}"
+            message_lines.append(f"声纹排序（{match['transcript_label']}）：{ranking}")
+        if viewpoints:
+            message_lines.append("核心观点：")
+            for index, item in enumerate(viewpoints, start=1):
+                message_lines.append(
+                    f"{index}. `{item['timestamp']}` {item['category']}：{item['point']}"
+                )
+        elif non_substantive:
+            for item in non_substantive:
+                message_lines.append(
+                    f"- `{item['timestamp']}` 非实质发言：{item['reason']}"
+                )
+        message_lines.append("")
+    if warnings:
+        message_lines.append(f"> 有 {len(warnings)} 个标签需要关注；识别结果不会自动修改正式声纹。")
+    return {
+        "schema_version": 1,
+        "meeting": bundle["meeting"],
+        "customer": bundle["customer"],
+        "speakers": speakers,
+        "warnings": warnings,
+        "message_markdown": "\n".join(message_lines).strip(),
+    }
+
+
 def write_outputs(
     run_dir: Path,
     bundle: dict[str, Any],
@@ -122,6 +234,7 @@ def write_outputs(
     json_path = run_dir / "final_results.json"
     csv_path = run_dir / "speaker_results.csv"
     report_path = run_dir / "report.md"
+    feishu_path = run_dir / "feishu_summary.json"
     atomic_write_json(json_path, payload)
 
     flat_rows: list[dict[str, Any]] = []
@@ -245,8 +358,13 @@ def write_outputs(
         ]
     )
     report_path.write_text("\n".join(lines), encoding="utf-8")
+    feishu_payload = build_feishu_summary(bundle, resolved, grouped)
+    feishu_payload["detailed_report"] = str(report_path)
+    feishu_payload["final_results"] = str(json_path)
+    atomic_write_json(feishu_path, feishu_payload)
     return {
         "report": str(report_path),
         "json": str(json_path),
         "csv": str(csv_path),
+        "feishu_summary": str(feishu_path),
     }

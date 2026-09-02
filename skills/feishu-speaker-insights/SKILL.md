@@ -1,51 +1,53 @@
 ---
 name: feishu-speaker-insights
-description: Identify anonymous speakers in local Feishu Minutes audio and transcripts with customer-scoped voiceprints, then produce auditable confidence evidence and per-person viewpoints. Use for enrollment, cross-meeting speaker matching, profile review, or voiceprint-backed meeting insights; do not use for ordinary summaries without speaker identification.
+description: 使用客户隔离的本地声纹识别飞书妙记中的匿名说话人，并输出可审计的声纹排序、置信证据和逐人核心观点。适用于首次声纹建库、跨会议识别、报告纠正、声纹扩充和版本维护；普通会议总结不要触发。
 ---
 
-# Feishu Speaker Insights
+# 飞书妙记声纹识别与观点
 
-Use the deterministic CLI in `scripts/speaker_insights.py` for audio processing, voiceprint storage, matching, review sessions, conflict resolution, and report rendering. Keep semantic inference limited to evidence extraction and viewpoint wording.
+使用 `scripts/speaker_insights.py` 完成音频处理、声纹存储、匹配、审核和报告渲染。Agent 只负责整理输入、提取可回查的上下文证据与观点，不自由修改声纹分数或最终规则。
 
-## Route the request
+## 先判断任务类型
 
-- For a new customer or new person, read [references/review-console.md](references/review-console.md) and [references/schemas.md](references/schemas.md). Create an `enroll review-create` session and return its review URL. Do not conduct per-label confirmation in chat or run `enroll commit` unless an administrator explicitly requests the legacy CLI path.
-- For a later recording, run `analyze acoustic`, read the generated transcript index, autonomously extract anchored context evidence and per-label viewpoints, then run `analyze finalize`. Do not pause for threshold selection or ask the user to fill semantic JSON.
-- For profile maintenance, read [references/review-console.md](references/review-console.md). Use the browser catalogue and immutable version panel for source inspection, current-version switching, disabling, and enabling. Create a `profile_revision` review task before retaining or excluding historical windows; direct fork is a compatibility-only administrative path. List candidates first and create `profile review-create` for pending expansion audio.
-- For setup, migration, the review service, or failures, read [references/deployment.md](references/deployment.md) and run `doctor`.
-- For confidence and conflict handling, read [references/identity-resolution.md](references/identity-resolution.md).
+- OpenClaw 等 Agent 发起首次建库或后续录音分析时，先读 [Agent 工作流](references/agent-workflows.md) 和 [数据格式](references/schemas.md)，默认调用稳定的 `agent` 端到端接口。
+- 简单首次建库（一个目标人，最多三组非红色候选）使用飞书消息试听与确认；复杂、多人员或混合风险任务自动转浏览器审核台。浏览器操作见 [审核台](references/review-console.md)。
+- 后续录音调用 `agent analyze-start`，根据其 `semantic_request` 一次生成上下文和观点，再调用 `agent analyze-complete`。不要让用户配置阈值或填写 JSON。
+- 用户只纠正本次报告身份时调用 `agent analysis-correct`。它不得创建、扩充或切换声纹；声纹扩充必须另走候选审核和明确确认。
+- 声纹版本、停用、扩充候选和版本修订读 [审核台](references/review-console.md)。
+- 安装、迁移、模型准备或运行故障读 [部署说明](references/deployment.md)，先运行 `doctor`。
+- 置信度与冲突处理读 [身份判定规则](references/identity-resolution.md)。
 
-## Invariants
+## 不可违反的规则
 
-- Voiceprint evidence outranks contextual inference. Context may explain, corroborate, downgrade, or produce a clearly labeled context-assisted inference; it must never rewrite acoustic scores.
-- A browser click on “确认建库” is the required user confirmation. Before that click, keep vectors only under the expiring review session and never create a usable profile version.
-- Match customer people only within their customer. Load global Yingdao staff only when listed as attendees or named exactly in the transcript.
-- Preserve unknown, mixed, low-audio, and review-required outcomes. Do not force every label onto a known person.
-- Always show acoustic Top-1 and Top-2 identities and similarity scores when profiles exist, even when the final identity remains unknown. Internal thresholds are automatic safety gates, not user settings.
-- A strongly and explicitly grounded name may identify a speaker who is outside the current voiceprint cohort. Label this `上下文识别（声纹库外）`, preserve the acoustic ranking, and never create a profile automatically.
-- Treat similarity as candidate-set evidence, not an identity probability. Report level, score, threshold, margin, and usable speech instead of a percentage.
-- Anchor every context item and viewpoint to an existing transcript label and timestamp. If validation fails, repair it from the transcript or report the failure; never invent evidence.
-- Cover every transcript label with at least one grounded core viewpoint or `发言摘要`, whether the label is known, unknown, mixed, or outside the voiceprint cohort. The only exception is grounded background/noise/incidental speech recorded in `non_substantive_labels`. Never finalize an empty viewpoint artifact.
-- Do not retain cropped WAV files. Keep original audio unchanged and store only hashes, timestamps, embeddings, metadata, and reports.
-- Keep every `vNNNN` immutable. Switching changes only the current-version pointer; disabling preserves that pointer and every version. A fork always allocates after the highest historical version and never overwrites its base.
-- The review HTTP service is LAN-local only. Do not expose it to the public Internet or add an unauthorised remote proxy.
+- 声纹证据优先于上下文。上下文只能解释、佐证、降级或形成明确标注的辅助推断，不能改写声纹分数。
+- 正式声纹只能在两种明确授权后写入：网页点击“确认建库”，或飞书用户回复/语音说“确认建库”且该消息已绑定原会话、用户和消息 ID。用户永远不需要看到、念出或输入技术任务 ID。
+- 单候选快捷建库可在“确认建库”时自动保留唯一候选；两到三组候选必须先确认 A/B/C 选择。Agent 回显选择后再提交，不依赖多个附件的发送顺序。
+- 客户人员只能匹配所属客户；我方人员只有在参会名单中或转写标签与姓名完全一致时才从共享员工库加载。
+- 所有标签都必须得到结果。保留未知、混合、语音不足和需复核状态，不强行映射到已知人员。
+- 有声纹候选时始终展示 Top-1、Top-2 和相似度。相似度不是身份概率，不输出“87% 是某人”。
+- 每个转写标签必须包含可回查的核心观点或 `发言摘要`。只有确属杂音、设备播放、路人或无实质内容时，才能写入带时间戳与原文的 `non_substantive_labels`。
+- 上下文和观点必须对应转写中的原标签、时间戳与原文。语义校验失败时根据机器可读错误修复后重试，不向用户索要技术格式。
+- 不保留裁剪 WAV；不修改原始录音；只保存哈希、时间戳、向量、元数据和报告。
+- `vNNNN` 永远不可变。切换只改变当前版本指针；停用不删除版本；从历史版本修改必须生成更高的新版本。
+- 后续录音产生的声纹扩充候选不会自动进入正式库。当前版本中，同一人的多个候选仍分别审核；混合标签暂不自动二次拆分。
+- 审核服务只能在本机或可信局域网运行，不得暴露到公网。
 
-## Normal workflow
+## 标准执行方式
 
-1. Run `paths` so the user can see where biometric files and outputs will be stored. In the production layout, set `FEISHU_SPEAKER_CUSTOMERS_ROOT`; customer profiles live under `<客户>/声纹数据` and staff profiles plus SQLite live under `<客户根>/共享数据/声纹数据`.
-2. Run `doctor`; stop on missing FFmpeg, unsupported platform, missing model source, or unwritable data paths.
-3. Use an absolute-path meeting manifest that follows `references/schemas.md`.
-4. Execute the relevant command through the `voiceprint-poc` Conda environment:
+1. 运行 `paths`，明确客户目录、共享声纹库、模型缓存和本次输出位置。
+2. 运行 `doctor`；缺少 FFmpeg、模型、依赖或写权限时停止。
+3. 输入清单使用绝对路径，并遵循 [数据格式](references/schemas.md)。
+4. 通过 `voiceprint-poc` Conda 环境执行：
 
    `conda run -n voiceprint-poc python scripts/speaker_insights.py ...`
 
-5. For a new enrollment, create the review session, return the link, and end the interaction. The Worker prepares audio evidence once; the browser reuses it for clustering, playback, editing, and validation. Never reload the model merely because a user edits selections.
-6. For semantic artifacts, write only the JSON shapes documented in `references/schemas.md`. Inspect every label in `transcript_index.json`, create both artifacts in the same run, and pass them to `analyze finalize` for deterministic validation and rendering. If finalization reports missing labels, complete those labels from the indexed transcript and retry without asking the user.
-7. Return links to the Markdown report and JSON result, plus the exact profile or candidate paths when a write occurred.
+5. Agent 接口返回的 `task_id`、`session_id`、候选不可变 ID 和哈希只保存在 Agent 状态中，不原样要求用户操作。
+6. 命令失败时读取 JSON 的 `error_code`、`retryable` 和 `details`；可重试错误按原任务恢复，不新建重复任务。
+7. 分析完成后优先发送 `feishu_summary.json` 中已经排版好的 `message_markdown`，同时保留 Markdown 详细报告和完整 JSON 供用户打开。
+8. 发生写入时返回准确的声纹版本、候选或报告路径。
 
-## Safety boundaries
+## 数据与用途边界
 
-- This workflow performs local meeting analysis, not biometric authentication or access control.
-- Do not upload audio, transcripts, embeddings, or customer metadata to external services unless the user separately authorizes it.
-- Do not broaden a customer candidate set based on fuzzy name similarity.
-- If a customer name resolves ambiguously, use its stable customer ID.
+- 本流程用于会议说话人辅助识别，不用于门禁、支付或身份认证。
+- 未经用户单独授权，不把录音、转写、声纹或客户信息发送给外部服务。
+- 不用模糊姓名扩大客户候选集；客户名称有歧义时使用稳定客户 ID。

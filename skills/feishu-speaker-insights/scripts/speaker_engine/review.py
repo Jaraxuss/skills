@@ -16,7 +16,7 @@ import numpy as np
 
 from .constants import PIPELINE_CONFIG
 from .embedding import EmbeddingEngine
-from .matching import build_profile_arrays, calibrate_profiles, internal_consistency_filter, match_label
+from .matching import build_profile_arrays, internal_consistency_filter, match_label
 from .storage import DataStore
 from .transcript import (
     Candidate,
@@ -37,7 +37,7 @@ from .util import (
     stable_id,
     utc_compact,
 )
-from .workflow import _model_manifest, audio_duration, validate_manifest
+from .workflow import _calibration_for_profiles, _model_manifest, audio_duration, validate_manifest
 
 
 SPECIAL_ASSIGNMENTS = {"unknown", "background", "skip", "noise"}
@@ -912,7 +912,9 @@ def prepare_review_session(
         manifest.get("attendees", []),
         {candidate.label for candidate in candidates},
     )
-    calibration = calibrate_profiles(profiles)
+    calibration = _calibration_for_profiles(
+        store, str(manifest["customer"]["id"]), profiles
+    )
     labels: list[dict[str, Any]] = []
     segments: list[dict[str, Any]] = []
     candidate_indices_by_label: dict[tuple[str, str], list[int]] = defaultdict(list)
@@ -1480,6 +1482,12 @@ def commit_review_session(
         if int(session["revision"]) != int(revision):
             raise RuntimeError("review_revision_conflict")
         decision = session.get("decision") or {}
+        confirmation = (
+            decision.get("confirmation")
+            if isinstance(decision.get("confirmation"), dict)
+            else {}
+        )
+        confirmation_mode = str(confirmation.get("mode") or "web_confirmed")
         validation = validate_review_decision(session_id, decision, store)
         if not validation["valid"]:
             return {"status": "validation_failed", **validation}
@@ -1566,7 +1574,8 @@ def commit_review_session(
                     profile_manifest = {
                         "model": package["model"],
                         "review_session_id": session_id,
-                        "confirmation_mode": "web_confirmed",
+                        "confirmation_mode": confirmation_mode,
+                        "confirmation": confirmation,
                         "registration": {
                             "confirmed_at": now_iso(),
                             "source_audio_sha256": package["source"]["audio_sha256"],
@@ -1604,7 +1613,10 @@ def commit_review_session(
                             "source": package["source"],
                             "sources": package.get("sources") or [package["source"]],
                             "voiceprint": {"accept_threshold": package["calibration"]["accept_threshold"]},
-                            "confirmation": {"mode": "web_confirmed"},
+                            "confirmation": {
+                                **confirmation,
+                                "mode": confirmation_mode,
+                            },
                         },
                     )
                     candidates_created.append(candidate)
@@ -1631,6 +1643,7 @@ def commit_review_session(
                 "promoted_candidates": [item["candidate_id"] for item in candidates_created],
                 "validation": validation,
                 "playback_count": store.audit_count(session_id, "review_segment_played"),
+                "confirmation_mode": confirmation_mode,
             }
             result_path = Path(session["package_path"]).parent / "review_result.json"
             atomic_write_json(result_path, result)

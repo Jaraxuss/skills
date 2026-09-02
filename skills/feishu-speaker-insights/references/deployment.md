@@ -21,6 +21,23 @@
 
 引导脚本在 Ubuntu 使用官方 PyTorch CPU wheel 源。FFmpeg 和 libsndfile 均安装在 Conda 环境中，不依赖系统级 Homebrew 或 apt。
 
+## Skill 源码与安装链接
+
+版本库中的目录是唯一源码：
+
+```text
+/Users/velen/Desktop/Velen/Z7Z8/skills/skills/feishu-speaker-insights
+```
+
+Codex 安装位置只使用软链接：
+
+```text
+~/.codex/skills/feishu-speaker-insights
+  -> /Users/velen/Desktop/Velen/Z7Z8/skills/skills/feishu-speaker-insights
+```
+
+不要分别编辑两份 Skill，也不要把客户数据、模型缓存或运行产物写进源码目录。仓库更新后软链接会立即指向新版内容；升级后运行 `capabilities`、`doctor` 和自动测试。
+
 ## 运行时路径
 
 `FEISHU_SPEAKER_DATA_DIR` 可覆盖默认的声纹数据根目录。
@@ -50,6 +67,7 @@
     ├── customer.json
     ├── people/<person-id>/profiles/
     ├── enrollments/
+    ├── agent-tasks/
     ├── candidates/
     ├── runs/
     └── calibrations/
@@ -60,6 +78,8 @@ macOS value: `/Users/velen/Desktop/Velen/Z7Z8/客户`.
 Ubuntu value: `/home/velen/velen/客户`.
 
 所有新的 SQLite 声纹、运行记录和候选路径均使用 `customer://` 或 `shared://` URI；历史绝对路径仍可读取。
+
+Agent 端到端任务的哈希、阶段、检查点、短租约和结果索引保存在共享 SQLite 的 `task_executions` 表；较大的审核包、声学产物和报告仍放在对应客户的 `agent-tasks/` 与 `runs/` 目录。等待飞书确认或语义生成时不占用 Worker 租约。
 
 ### 复制式迁移
 
