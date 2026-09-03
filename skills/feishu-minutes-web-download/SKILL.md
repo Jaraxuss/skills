@@ -85,11 +85,24 @@ node /home/velen/.openclaw/workspace/skills/feishu-minutes-web-download/scripts/
 
 ## 默认输出
 
-- `media.ogg`：妙记录音。大文件默认用 4 路 Range 分片流式落盘。
-- `transcript.md`：带说话人和毫秒时间戳的完整转写。
-- `download.json`：标题、token、文件路径、大小、段落数和耗时。
+默认文件名使用“妙记原标题 + 类型 + 批次时间”：
+
+- `<妙记原标题>_录音_<yyMMddHHmm>.ogg`：妙记录音。大文件默认用 4 路 Range 分片流式落盘。
+- `<妙记原标题>_转写_<yyMMddHHmm>.md`：带说话人和毫秒时间戳的完整转写。
+- `<妙记原标题>_信息_<yyMMddHHmm>.json`：标题、token、文件路径、大小、段落数和耗时。
+
+`yyMMddHHmm` 默认是首次下载开始时的上海时区时间，例如：
+
+```text
+二期需求规划讨论会_录音_2609030324.ogg
+二期需求规划讨论会_转写_2609030324.md
+二期需求规划讨论会_信息_2609030324.json
+```
+
+同一次下载的三个文件共用同一时间戳。对同一 token 在同一目录重跑时，脚本从已有信息文件中复用原批次时间，不会因重跑产生新的时间戳副本。
 
 全文可选 `--format md|txt|srt`。用户明确需要 MP4 时传入 `--prefer-mp4 true`。
+如需指定批次时间，传入 `--filename-timestamp <yyMMddHHmm>`；默认时区可用 `--filename-timezone <IANA 时区>` 调整。显式传入 `--media-output`、`--transcript-output` 或 `--info-output` 时，优先使用指定路径。
 
 ## 性能和稳定性规则
 

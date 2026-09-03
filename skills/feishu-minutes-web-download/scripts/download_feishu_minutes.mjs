@@ -72,13 +72,63 @@ function isLoginPage(url) {
   return /accounts\/page\/login|accounts\/trap|accounts\/login/i.test(String(url));
 }
 
-function safeName(value) {
+function truncateUtf8(value, maxBytes) {
+  let result = '';
+  let bytes = 0;
+  for (const character of String(value)) {
+    const characterBytes = Buffer.byteLength(character, 'utf8');
+    if (bytes + characterBytes > maxBytes) break;
+    result += character;
+    bytes += characterBytes;
+  }
+  return result;
+}
+
+function safeName(value, maxBytes = 180) {
   const cleaned = String(value || 'feishu-minutes')
     .replace(/[\/\\:*?"<>|]/g, '_')
     .replace(/\s+/g, ' ')
     .trim()
     .replace(/[. ]+$/, '');
-  return (cleaned || 'feishu-minutes').slice(0, 180);
+  return truncateUtf8(cleaned || 'feishu-minutes', maxBytes);
+}
+
+function filenameTimestamp(date = new Date(), timeZone = 'Asia/Shanghai') {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: '2-digit',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23'
+    }).formatToParts(date)
+      .filter((part) => part.type !== 'literal')
+      .map((part) => [part.type, part.value])
+  );
+  return `${parts.year}${parts.month}${parts.day}${parts.hour}${parts.minute}`;
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+async function findExistingBatchTimestamp(outputDir, title, token) {
+  const pattern = new RegExp(`^${escapeRegExp(title)}_信息_(\\d{10})\\.json$`);
+  const candidates = (await fsp.readdir(outputDir).catch(() => []))
+    .map((name) => ({ name, match: name.match(pattern) }))
+    .filter((item) => item.match)
+    .sort((left, right) => right.match[1].localeCompare(left.match[1]));
+  for (const candidate of candidates) {
+    try {
+      const manifest = JSON.parse(await fsp.readFile(path.join(outputDir, candidate.name), 'utf8'));
+      if (manifest.token === token) return candidate.match[1];
+    } catch {
+      // Ignore malformed or unrelated information files and keep searching.
+    }
+  }
+  return '';
 }
 
 function uniquePath(filePath) {
@@ -232,6 +282,8 @@ if (args.help) {
     '  --range-concurrency <n>              default: 4',
     '  --range-threshold <bytes>             default: 20971520',
     '  --prefer-mp4 true|false              default: false',
+    '  --filename-timezone <iana-zone>       default: Asia/Shanghai',
+    '  --filename-timestamp <yyMMddHHmm>     optional fixed batch timestamp',
     '  --reuse-existing true|false          default: true',
     '  --overwrite true|false               default: false'
   ].join('\n') + '\n');
@@ -279,6 +331,18 @@ const rangeThreshold = numberArg(args['range-threshold'], 20 * 1024 * 1024, 0);
 const reuseExisting = boolArg(args['reuse-existing'], true);
 const overwrite = boolArg(args.overwrite, false);
 const preferMp4 = boolArg(args['prefer-mp4'], false);
+const filenameTimeZone = String(args['filename-timezone'] || 'Asia/Shanghai');
+const requestedFilenameTimestamp = args['filename-timestamp']
+  ? String(args['filename-timestamp'])
+  : '';
+if (requestedFilenameTimestamp && !/^\d{10}$/.test(requestedFilenameTimestamp)) {
+  emit({
+    event: 'error',
+    ok: false,
+    error: '--filename-timestamp 必须是 yyMMddHHmm 格式的 10 位数字'
+  });
+  process.exit(1);
+}
 
 await fsp.mkdir(profileDir, { recursive: true, mode: 0o700 });
 await fsp.chmod(profileDir, 0o700).catch(() => {});
@@ -354,6 +418,9 @@ try {
       (!/^Feishu(?:\s*-\s*Log in)?$/i.test(pageTitle) ? pageTitle : '') ||
       `feishu-minutes-${parsed.token}`
     );
+    const batchTimestamp = requestedFilenameTimestamp ||
+      (reuseExisting ? await findExistingBatchTimestamp(outputDir, title, parsed.token) : '') ||
+      filenameTimestamp(new Date(), filenameTimeZone);
 
     const cookies = await context.cookies([
       parsed.url.href,
@@ -393,7 +460,10 @@ try {
         return all;
       }, { token: parsed.token, paragraphIds: initial.paragraphIds });
       const extension = `.${format}`;
-      let output = chooseOutput(args['transcript-output'], `transcript${extension}`);
+      let output = chooseOutput(
+        args['transcript-output'],
+        `${title}_转写_${batchTimestamp}${extension}`
+      );
       const content = renderTranscript(paragraphs, format, title, parsed.url.href);
       if (reuseExisting && fs.existsSync(output) && await fsp.readFile(output, 'utf8') === content) {
         return {
@@ -433,7 +503,10 @@ try {
       const extension = /ogg/i.test(contentType) ? '.ogg'
         : /mp4/i.test(contentType) ? '.mp4'
           : /mpeg/i.test(contentType) ? '.mp3' : '.bin';
-      let output = chooseOutput(args['media-output'], `media${extension}`);
+      let output = chooseOutput(
+        args['media-output'],
+        `${title}_录音_${batchTimestamp}${extension}`
+      );
 
       if (reuseExisting && fs.existsSync(output) && totalBytes > 0 &&
           (await fsp.stat(output)).size === totalBytes) {
@@ -509,14 +582,18 @@ try {
     if (mode === 'transcript' || mode === 'both') jobs.push(downloadTranscript());
     const outputs = await Promise.all(jobs);
     const manifest = {
-      schema: 'feishu-minutes-web-download.v2',
+      schema: 'feishu-minutes-web-download.v3',
       token: parsed.token,
       title,
+      filename_timestamp: batchTimestamp,
+      filename_timezone: filenameTimeZone,
       downloaded_at: new Date().toISOString(),
       elapsed_ms: elapsedMs(),
       outputs
     };
-    const manifestPath = path.join(outputDir, 'download.json');
+    const manifestPath = args['info-output']
+      ? path.resolve(String(args['info-output']))
+      : path.join(outputDir, `${title}_信息_${batchTimestamp}.json`);
     await fsp.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n', {
       encoding: 'utf8', mode: 0o600
     });
