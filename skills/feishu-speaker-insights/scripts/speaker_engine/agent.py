@@ -35,7 +35,7 @@ from .workflow import analyze_acoustic, analyze_finalize, validate_manifest
 
 
 AGENT_API_VERSION = 1
-ENGINE_SCHEMA_VERSION = 2
+ENGINE_SCHEMA_VERSION = 3
 
 
 def capabilities() -> dict[str, Any]:
@@ -50,6 +50,8 @@ def capabilities() -> dict[str, Any]:
         "no_user_visible_task_ids": True,
         "machine_readable_errors": True,
         "fixed_feishu_summary": True,
+        "identified_transcript": True,
+        "message_only_default_delivery": True,
         "analysis_correction_isolated": True,
         "calibration_cache": True,
         "profile_revision": True,
@@ -68,6 +70,7 @@ def _pipeline_hash() -> str:
     return _canonical_hash(
         {
             "schema": SCHEMA_VERSION,
+            "engine_schema": ENGINE_SCHEMA_VERSION,
             "model": MODEL_CONFIG,
             "pipeline": PIPELINE_CONFIG,
         }
@@ -204,6 +207,46 @@ def _begin_task(
     return task, reused, identity
 
 
+def _task_for_execution(
+    task_id: str | None,
+    operation: str,
+    manifest: dict[str, Any],
+    request: dict[str, Any],
+    store: DataStore,
+    intent: dict[str, Any],
+) -> tuple[dict[str, Any], bool, dict[str, Any]]:
+    """Resolve a queued task without creating it a second time.
+
+    Direct/legacy callers may omit ``task_id`` and retain the historical
+    create-or-reuse behavior.  The service worker always supplies the task it
+    claimed from SQLite, making that row the authoritative failure and retry
+    target.
+    """
+    if not task_id:
+        return _begin_task(operation, manifest, request, store, intent)
+    task = store.get_task(task_id)
+    if task["operation"] != operation:
+        raise StructuredError(
+            "TASK_TYPE_MISMATCH",
+            f"任务类型不匹配：期望 {operation}，实际 {task['operation']}。",
+            retryable=False,
+        )
+    identity = _task_identity(operation, manifest, store, intent)
+    mismatches = {
+        field: {"queued": str(task.get(field) or ""), "current": str(identity.get(field) or "")}
+        for field in ("request_hash", "source_hash", "pipeline_hash", "cohort_hash")
+        if str(task.get(field) or "") != str(identity.get(field) or "")
+    }
+    if mismatches:
+        raise StructuredError(
+            "TASK_IDENTITY_CHANGED",
+            "任务入队后，来源、处理管线或候选声纹版本发生变化。",
+            details={"task_id": task_id, "mismatches": mismatches},
+            retryable=True,
+        )
+    return task, False, identity
+
+
 def _task_response(task: dict[str, Any], *, reused: bool) -> dict[str, Any]:
     checkpoint = task.get("checkpoint") or {}
     return {
@@ -264,12 +307,25 @@ def _target_person(package: dict[str, Any], request: dict[str, Any]) -> dict[str
     return eligible[0] if len(eligible) == 1 else None
 
 
-def _quick_candidates(package: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
+def _quick_candidates(
+    package: dict[str, Any], target_person_id: str | None = None
+) -> tuple[list[dict[str, Any]], list[str]]:
     candidates: list[dict[str, Any]] = []
     reasons: list[str] = []
     segment_by_id = {str(item["segment_id"]): item for item in package.get("segments", [])}
     for label in package.get("labels", []):
         if label.get("excluded_by_manifest"):
+            continue
+        suggestion = label.get("suggestion") or {}
+        # A real-name transcript label that deterministically belongs to a
+        # different attendee is irrelevant when the user explicitly asked to
+        # enroll only one target person.  Do not let noise or mixed speech in
+        # that non-target label force an otherwise simple task into web review.
+        if (
+            target_person_id
+            and suggestion.get("source") in {"exact_named_label", "known_label_map"}
+            and str(suggestion.get("person_id") or "") != target_person_id
+        ):
             continue
         clusters = [item for item in label.get("clusters", []) if item.get("segment_ids")]
         if label.get("risk") == "red" or len(clusters) != 1:
@@ -347,7 +403,9 @@ def _agent_enrollment_payload(
     package: dict[str, Any], request: dict[str, Any], review_url: str | None, destination: Path
 ) -> dict[str, Any]:
     target = _target_person(package, request)
-    candidates, reasons = _quick_candidates(package)
+    candidates, reasons = _quick_candidates(
+        package, str(target.get("person_id") or "") if target else None
+    )
     forced_web = str(request.get("review_mode") or "auto") == "web"
     quick = bool(target and 1 <= len(candidates) <= 3 and not reasons and not forced_web)
     if not quick:
@@ -395,6 +453,7 @@ def _agent_enroll_start_impl(
     request_path: Path,
     store: DataStore,
     *,
+    task_id: str | None = None,
     base_url: str | None = None,
     download: bool = False,
     engine: EmbeddingEngine | None = None,
@@ -405,7 +464,9 @@ def _agent_enroll_start_impl(
         "target_person": request.get("target_person"),
         "review_mode": request.get("review_mode", "auto"),
     }
-    task, reused, identity = _begin_task("enroll", manifest, request, store, intent)
+    task, reused, identity = _task_for_execution(
+        task_id, "enroll", manifest, request, store, intent
+    )
     checkpoint = task.get("checkpoint") or {}
     if reused and checkpoint.get("agent_enrollment"):
         session_id = checkpoint.get("session_id")
@@ -541,6 +602,7 @@ def agent_enroll_start(
     request_path: Path,
     store: DataStore,
     *,
+    task_id: str | None = None,
     base_url: str | None = None,
     download: bool = False,
     engine: EmbeddingEngine | None = None,
@@ -549,24 +611,28 @@ def agent_enroll_start(
         return _agent_enroll_start_impl(
             request_path,
             store,
+            task_id=task_id,
             base_url=base_url,
             download=download,
             engine=engine,
         )
     except Exception as exc:
         try:
-            request = load_structured(request_path.resolve())
-            manifest = _request_manifest(request, batch=True)
-            task, _, _ = _begin_task(
-                "enroll",
-                manifest,
-                request,
-                store,
-                {
-                    "target_person": request.get("target_person"),
-                    "review_mode": request.get("review_mode", "auto"),
-                },
-            )
+            if task_id:
+                task = store.get_task(task_id)
+            else:
+                request = load_structured(request_path.resolve())
+                manifest = _request_manifest(request, batch=True)
+                task, _, _ = _begin_task(
+                    "enroll",
+                    manifest,
+                    request,
+                    store,
+                    {
+                        "target_person": request.get("target_person"),
+                        "review_mode": request.get("review_mode", "auto"),
+                    },
+                )
             code, details = _failure_details(exc)
             store.update_task(
                 task["task_id"],
@@ -763,6 +829,7 @@ def _agent_analyze_start_impl(
     request_path: Path,
     store: DataStore,
     *,
+    task_id: str | None = None,
     download: bool = False,
     engine: EmbeddingEngine | None = None,
     should_cancel: Callable[[], bool] | None = None,
@@ -770,7 +837,9 @@ def _agent_analyze_start_impl(
 ) -> dict[str, Any]:
     request = load_structured(request_path.resolve())
     manifest = _request_manifest(request, batch=False)
-    task, reused, identity = _begin_task("analyze", manifest, request, store, {})
+    task, reused, identity = _task_for_execution(
+        task_id, "analyze", manifest, request, store, {}
+    )
     checkpoint = task.get("checkpoint") or {}
     if reused and checkpoint.get("acoustic"):
         return _task_response(task, reused=True)
@@ -845,6 +914,7 @@ def agent_analyze_start(
     request_path: Path,
     store: DataStore,
     *,
+    task_id: str | None = None,
     download: bool = False,
     engine: EmbeddingEngine | None = None,
     should_cancel: Callable[[], bool] | None = None,
@@ -854,6 +924,7 @@ def agent_analyze_start(
         return _agent_analyze_start_impl(
             request_path,
             store,
+            task_id=task_id,
             download=download,
             engine=engine,
             should_cancel=should_cancel,
@@ -861,9 +932,12 @@ def agent_analyze_start(
         )
     except Exception as exc:
         try:
-            request = load_structured(request_path.resolve())
-            manifest = _request_manifest(request, batch=False)
-            task, _, _ = _begin_task("analyze", manifest, request, store, {})
+            if task_id:
+                task = store.get_task(task_id)
+            else:
+                request = load_structured(request_path.resolve())
+                manifest = _request_manifest(request, batch=False)
+                task, _, _ = _begin_task("analyze", manifest, request, store, {})
             code, details = _failure_details(exc)
             store.update_task(
                 task["task_id"],

@@ -66,6 +66,7 @@ GET  /api/v1/analysis-tasks/{task_id}
 GET  /api/v1/analysis-tasks/{task_id}/semantic-request
 POST /api/v1/analysis-tasks/{task_id}/semantic-result
 GET  /api/v1/analysis-tasks/{task_id}/report?format=feishu|json|markdown
+GET  /api/v1/analysis-tasks/{task_id}/identified-transcript
 POST /api/v1/analysis-tasks/{task_id}/cancel
 POST /api/v1/analysis-tasks/{task_id}/retry
 POST /api/v1/analysis-tasks/{task_id}/corrections
@@ -93,9 +94,11 @@ queued → running/transcoding → running/extracting_embeddings
 
 字段细节见 [数据格式](schemas.md)。语义结果必须覆盖每个标签；校验失败后任务回到 `awaiting_semantic / semantic_revision_required`。
 
-完成后读取 `format=feishu`。响应中的 `delivery_contract` 明确要求同一次最终交付包含两项：原样发送 `message_markdown`，以及下载并真实上传 `markdown_attachment`。调用方必须检查两项发送回执，附件未成功时不能声称“报告已发送”。`format=json` 是完整权威结果；不得由 Agent 重写声纹排序或另造报告规则。
+完成后读取 `format=feishu`。默认交付是 `delivery_contract.default_delivery: message_only`：调用方原样发送 `message_markdown`，不默认上传完整报告。用户明确索要详情时再读取 `detailed_report_on_request.url`；响应的 `artifacts.identified_transcript.url` 指向后端自动生成的实名转写。`format=json` 是完整权威结果；不得由 Agent 重写声纹排序或另造报告规则。
 
 简报以多窗口聚合相似度、一致片段数和候选分差表达声纹证据；详细报告另保留用于判定的保守分段分数。两者都不是身份认证概率。
+
+实名转写不会覆盖来源文件。后端只替换解析为转写标题的说话人标签；未知、混合、有效语音不足和证据不足标签原样保留。人工纠正接口生成纠正版报告时，也会生成对应的实名转写。
 
 人工纠正请求沿用语义工作流中的会话绑定字段和 `corrections` 数组，只生成版本化报告，返回 `voiceprint_changed: false`。
 

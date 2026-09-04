@@ -22,6 +22,49 @@ RANGED_HEADER_RE = re.compile(
 )
 
 
+def replace_speaker_labels(
+    text: str, replacements: dict[str, str]
+) -> tuple[str, list[dict[str, str]]]:
+    """Replace speaker labels only in recognized transcript header lines.
+
+    Body text is intentionally untouched, even when it contains the same words as
+    a speaker label.  This makes the generated transcript safe to audit against
+    the original export.
+    """
+    normalized = {
+        str(label).strip(): str(identity).strip()
+        for label, identity in replacements.items()
+        if str(label).strip() and str(identity).strip()
+    }
+    applied: dict[str, str] = {}
+    output: list[str] = []
+    for raw_line in text.splitlines(keepends=True):
+        content = raw_line.rstrip("\r\n")
+        line_ending = raw_line[len(content) :]
+        stripped = content.strip()
+        match = RANGED_HEADER_RE.match(stripped)
+        if match is None:
+            match = HEADER_RE.match(stripped)
+        if match is None:
+            output.append(raw_line)
+            continue
+        label = match.group("label").strip()
+        identity = normalized.get(label)
+        if not identity or identity == label:
+            output.append(raw_line)
+            continue
+        start, end = match.span("label")
+        leading = content[: len(content) - len(content.lstrip())]
+        trailing = content[len(content.rstrip()) :]
+        rewritten = stripped[:start] + identity + stripped[end:]
+        output.append(leading + rewritten + trailing + line_ending)
+        applied[label] = identity
+    return "".join(output), [
+        {"transcript_label": label, "identity": identity}
+        for label, identity in applied.items()
+    ]
+
+
 @dataclass
 class Utterance:
     index: int

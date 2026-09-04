@@ -127,10 +127,14 @@ def agent_api_command(
         noun = "enrollment-tasks" if selected == "enroll" else "analysis-tasks"
         action = "cancel" if command == "task-cancel" else "retry"
         return _request(base, "POST", f"/api/v1/{noun}/{task_id}/{action}", {})
-    if command == "report":
+    if command in {"report", "identified-transcript"}:
         if not task_id:
             raise StructuredError("TASK_ID_REQUIRED", "缺少任务ID。")
-        selected_format = report_format or "feishu"
+        selected_format = (
+            "identified-transcript"
+            if command == "identified-transcript"
+            else (report_format or "feishu")
+        )
         if selected_format in {"feishu", "json"}:
             value = _request(
                 base,
@@ -144,9 +148,13 @@ def agent_api_command(
                 )
                 return {"ok": True, "format": selected_format, "output": str(output_path.resolve())}
             return value
-        if selected_format != "markdown":
+        if selected_format not in {"markdown", "identified-transcript"}:
             raise StructuredError("INVALID_REPORT_FORMAT", "报告格式必须是 feishu、json 或 markdown。")
-        url = f"{base}/api/v1/analysis-tasks/{task_id}/report?format=markdown"
+        url = (
+            f"{base}/api/v1/analysis-tasks/{task_id}/identified-transcript"
+            if selected_format == "identified-transcript"
+            else f"{base}/api/v1/analysis-tasks/{task_id}/report?format=markdown"
+        )
         try:
             with urllib.request.urlopen(url, timeout=30) as response:
                 content = response.read()
@@ -171,15 +179,15 @@ def agent_api_command(
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             raise StructuredError(
                 "BACKEND_UNAVAILABLE",
-                "无法从声纹后端读取详细报告。",
+                "无法从声纹后端读取文件。",
                 details={"api_url": base, "reason": str(exc)},
                 retryable=True,
             ) from exc
         if output_path is not None:
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_bytes(content)
-            return {"ok": True, "format": "markdown", "output": str(output_path.resolve())}
-        return {"ok": True, "format": "markdown", "content": content.decode("utf-8")}
+            return {"ok": True, "format": selected_format, "output": str(output_path.resolve())}
+        return {"ok": True, "format": selected_format, "content": content.decode("utf-8")}
     if command == "analysis-correct":
         if not task_id or corrections_path is None:
             raise StructuredError("TASK_ID_REQUIRED", "缺少任务ID或纠正内容。")

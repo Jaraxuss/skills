@@ -18,6 +18,7 @@ from .agent import (
 )
 from .embedding import EmbeddingEngine
 from .errors import StructuredError
+from .reporting import write_identified_transcript
 from .review import cleanup_review_artifacts, run_next_review_job
 from .storage import DataStore
 from .util import atomic_write_json, load_structured, sha256_file
@@ -37,6 +38,7 @@ INTERNAL_REPORT_FIELDS = {
     "run_dir",
     "detailed_report",
     "final_results",
+    "identified_transcript_path",
 }
 
 
@@ -225,9 +227,39 @@ def enrollment_request(payload: dict[str, Any], store: DataStore) -> dict[str, A
         target = {"name": target}
     if not isinstance(target, dict) or not str(target.get("name") or "").strip():
         raise StructuredError("TARGET_PERSON_REQUIRED", "简单建库必须明确目标人员。")
-    target_attendee = _attendees([target])[0]
-    target_name = target_attendee["name"]
-    if not any(item["name"] == target_name for item in attendees):
+    target_name = str(target.get("name") or "").strip()
+    matching_attendees = [item for item in attendees if item["name"] == target_name]
+    if len(matching_attendees) > 1 and not str(target.get("organization") or "").strip():
+        raise StructuredError(
+            "AMBIGUOUS_TARGET_PERSON",
+            "目标人员在参会人中存在多个同名记录，请明确归属。",
+            details={"name": target_name},
+        )
+    if matching_attendees:
+        inherited = matching_attendees[0]
+        target_input = {
+            "name": target_name,
+            "role": str(target.get("role") or inherited.get("role") or "").strip(),
+            "organization": str(
+                target.get("organization") or inherited.get("organization") or "customer"
+            ).strip(),
+        }
+        target_attendee = _attendees([target_input])[0]
+        if (
+            str(target.get("organization") or "").strip()
+            and target_attendee["organization"] != inherited["organization"]
+        ):
+            raise StructuredError(
+                "TARGET_ATTENDEE_CONFLICT",
+                "目标人员归属与同名参会人不一致。",
+                details={
+                    "name": target_name,
+                    "target_organization": target_attendee["organization"],
+                    "attendee_organization": inherited["organization"],
+                },
+            )
+    else:
+        target_attendee = _attendees([target])[0]
         attendees.append(target_attendee)
     meetings = [
         _meeting_manifest(store, customer["id"], item, index)
@@ -484,10 +516,24 @@ def report_paths(task_id: str, store: DataStore) -> dict[str, Path]:
     checkpoint = task.get("checkpoint") or {}
     latest = checkpoint.get("latest_correction") or {}
     outputs = latest.get("outputs") or (checkpoint.get("result") or {}).get("outputs") or {}
+    json_output = outputs.get("json") or task.get("result_path")
+    identified_output = outputs.get("identified_transcript")
+    if not identified_output and json_output:
+        try:
+            legacy_payload = load_structured(Path(str(json_output)))
+            generated, _ = write_identified_transcript(
+                Path(str(json_output)).parent,
+                dict(legacy_payload["meeting"]),
+                list(legacy_payload["results"]),
+            )
+            identified_output = str(generated)
+        except (FileNotFoundError, KeyError, TypeError, ValueError):
+            identified_output = None
     mapping = {
         "feishu": outputs.get("feishu_summary"),
-        "json": outputs.get("json") or task.get("result_path"),
+        "json": json_output,
         "markdown": outputs.get("report"),
+        "identified_transcript": identified_output,
     }
     result: dict[str, Path] = {}
     for key, value in mapping.items():
@@ -540,12 +586,24 @@ def public_report_payload(
         "json": f"{report_root}?format=json",
         "markdown": f"{report_root}?format=markdown",
     }
+    transcript_path = report_paths(task_id, store).get("identified_transcript")
+    transcript_url = (
+        f"{base_url.rstrip('/')}/api/v1/analysis-tasks/{task_id}/identified-transcript"
+    )
+    payload["artifacts"] = {}
+    if transcript_path is not None:
+        payload["artifacts"]["identified_transcript"] = {
+            "url": transcript_url,
+            "filename": transcript_path.name if transcript_path else "identified_transcript.md",
+            "generated_automatically": True,
+        }
     if report_format == "feishu":
         payload["delivery_contract"] = {
             "message_required": True,
             "message_field": "message_markdown",
-            "markdown_attachment_required": True,
-            "markdown_attachment": {
+            "default_delivery": "message_only",
+            "attachments_required": False,
+            "detailed_report_on_request": {
                 "url": f"{report_root}?format=markdown",
                 "filename": "report.md",
             },
@@ -604,6 +662,7 @@ class ServiceWorker:
                 return agent_analyze_start(
                     request_path,
                     self.store,
+                    task_id=task_id,
                     download=self.download,
                     engine=self.engine(),
                     should_cancel=lambda: self.store.task_cancel_requested(task_id),
@@ -613,6 +672,7 @@ class ServiceWorker:
                 return agent_enroll_start(
                     request_path,
                     self.store,
+                    task_id=task_id,
                     base_url=self.base_url,
                     download=self.download,
                     engine=self.engine(),

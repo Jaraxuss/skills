@@ -22,6 +22,7 @@ from speaker_engine.errors import StructuredError
 from speaker_engine.service import (
     ServiceWorker,
     enqueue_analysis,
+    enqueue_enrollment,
     enrollment_request,
     submit_semantic_result,
 )
@@ -128,6 +129,26 @@ class ServiceApiTests(unittest.TestCase):
         self.assertEqual(
             normalized["manifest"]["attendees"][0]["organization"], "yingdao"
         )
+
+    def test_enrollment_target_inherits_matching_attendee_scope_and_role(self) -> None:
+        payload = {
+            "schema_version": 1,
+            "customer_id": self.customer_id,
+            "meetings": [
+                {
+                    "audio_relpath": "录音/会议.wav",
+                    "transcript_relpath": "录音/会议.md",
+                }
+            ],
+            "attendees": [
+                {"name": "子叶", "role": "销售", "organization": "yingdao"}
+            ],
+            "target_person": {"name": "子叶"},
+        }
+        normalized = enrollment_request(payload, self.store)
+        self.assertEqual(normalized["target_person"]["role"], "销售")
+        self.assertEqual(normalized["target_person"]["organization"], "yingdao")
+        self.assertEqual(len(normalized["manifest"]["attendees"]), 1)
 
     def test_http_lifecycle_exposes_semantic_request_and_queues_finalize(self) -> None:
         with patch("speaker_engine.service.ServiceWorker.run_once", return_value=None):
@@ -243,6 +264,47 @@ class ServiceApiTests(unittest.TestCase):
                 self.assertEqual(created.status_code, 202)
                 self.assertEqual(created.json()["phase"], "queued_enrollment")
                 self.assertNotIn(str(self.root), created.text)
+                sessions = client.get("/api/v1/enrollment-sessions").json()["sessions"]
+                queued = next(
+                    item for item in sessions if item.get("task_id") == created.json()["task_id"]
+                )
+                self.assertEqual(queued["source_kind"], "machine_task")
+                self.assertEqual(queued["status"], "queued")
+                self.assertEqual(queued["customer_name"], "客户甲")
+
+    def test_worker_marks_the_claimed_enrollment_task_failed(self) -> None:
+        payload = {
+            "schema_version": 1,
+            "external_request_id": "enrollment-worker-failure",
+            "customer_id": self.customer_id,
+            "meetings": [
+                {
+                    "audio_relpath": "录音/会议.wav",
+                    "transcript_relpath": "录音/会议.md",
+                }
+            ],
+            "attendees": [
+                {"name": "子叶", "role": "销售", "organization": "yingdao"}
+            ],
+            "target_person": {"name": "子叶"},
+        }
+        task, _ = enqueue_enrollment(payload, self.store)
+        worker = ServiceWorker(
+            self.store,
+            base_url="http://testserver",
+            engine_factory=lambda: object(),
+        )
+        with patch(
+            "speaker_engine.agent.create_enrollment_review",
+            side_effect=ValueError("prepare exploded"),
+        ):
+            with self.assertRaisesRegex(ValueError, "prepare exploded"):
+                worker.run_once()
+        failed = self.store.get_task(task["task_id"])
+        self.assertEqual(failed["status"], "failed")
+        self.assertEqual(failed["phase"], "enrollment_failed")
+        self.assertEqual(failed["error_code"], "VALUEERROR")
+        self.assertEqual(failed["attempt_count"], 1)
 
     def test_reports_are_served_without_exposing_server_paths(self) -> None:
         task, _ = enqueue_analysis(self.request(), self.store)
@@ -254,9 +316,19 @@ class ServiceApiTests(unittest.TestCase):
             final_path,
             {
                 "schema_version": 1,
-                "meeting": {"title": "会议", "audio": str(self.audio)},
+                "meeting": {
+                    "title": "会议",
+                    "audio": str(self.audio),
+                    "transcript": str(self.transcript),
+                },
                 "calibration": {"cache_path": str(task_dir / "calibration.json")},
-                "results": [],
+                "results": [
+                    {
+                        "transcript_label": "说话人 1",
+                        "final_identity": "张总",
+                        "final_status": "声纹已匹配",
+                    }
+                ],
             },
         )
         atomic_write_json(
@@ -292,9 +364,12 @@ class ServiceApiTests(unittest.TestCase):
                 self.assertEqual(summary.json()["message_markdown"], "完成")
                 delivery = summary.json()["delivery_contract"]
                 self.assertTrue(delivery["message_required"])
-                self.assertTrue(delivery["markdown_attachment_required"])
+                self.assertEqual(delivery["default_delivery"], "message_only")
+                self.assertFalse(delivery["attachments_required"])
+                self.assertIn("detailed_report_on_request", delivery)
                 self.assertTrue(delivery["claim_sent_only_after_transport_success"])
                 self.assertIn("markdown", summary.json()["report_urls"])
+                self.assertIn("identified_transcript", summary.json()["artifacts"])
                 self.assertNotIn(str(self.root), summary.text)
                 complete = client.get(
                     f"/api/v1/analysis-tasks/{task['task_id']}/report?format=json"
@@ -304,6 +379,10 @@ class ServiceApiTests(unittest.TestCase):
                     f"/api/v1/analysis-tasks/{task['task_id']}/report?format=markdown"
                 )
                 self.assertIn("# 报告", markdown.text)
+                identified = client.get(
+                    f"/api/v1/analysis-tasks/{task['task_id']}/identified-transcript"
+                )
+                self.assertIn("张总 00:00", identified.text)
 
     def test_service_restart_recovers_owned_running_task(self) -> None:
         task, _ = enqueue_analysis(self.request(), self.store)

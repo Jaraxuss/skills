@@ -61,11 +61,16 @@ def normalize_review_manifest(raw: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("每组录音和转写必须是对象")
         audio_value = str(raw_meeting.get("audio") or "").strip()
         transcript_value = str(raw_meeting.get("transcript") or "").strip()
-        title = Path(audio_value).stem.strip()
+        title = str(raw_meeting.get("title") or Path(audio_value).stem).strip()
+        meeting_id = str(raw_meeting.get("id") or "").strip()
         candidate = json.loads(json.dumps(raw, ensure_ascii=False))
         candidate.pop("meetings", None)
         candidate["meeting"] = {
-            "id": safe_component(f"{index}-{audio_value}", "meeting"),
+            # API-created manifests already carry a content-derived stable ID.
+            # Keep it when normalizing the persisted request again in the
+            # worker; otherwise the request hash changes between enqueue and
+            # execution and trips the external-request idempotency guard.
+            "id": meeting_id or safe_component(f"{index}-{audio_value}", "meeting"),
             "title": title or f"录音 {index}",
             "audio": audio_value,
             "transcript": transcript_value,

@@ -3,7 +3,54 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from .util import atomic_write_json, write_csv
+from .transcript import replace_speaker_labels
+from .util import atomic_write_json, atomic_write_text, write_csv
+
+
+IDENTITY_BEARING_STATUSES = {
+    "声纹已匹配",
+    "声纹已匹配，需复核",
+    "上下文辅助识别",
+    "上下文识别（声纹库外）",
+    "人工纠正（仅本次报告）",
+}
+
+
+def write_identified_transcript(
+    run_dir: Path,
+    meeting: dict[str, Any],
+    resolved: list[dict[str, Any]],
+) -> tuple[Path, dict[str, Any]]:
+    replacements: dict[str, str] = {}
+    for row in resolved:
+        label = str(row.get("transcript_label") or "").strip()
+        identity = str(row.get("final_identity") or "").strip()
+        if (
+            label
+            and identity
+            and identity != "未知"
+            and row.get("final_status") in IDENTITY_BEARING_STATUSES
+        ):
+            replacements[label] = identity
+    source_transcript = Path(str(meeting["transcript"]))
+    source_text = source_transcript.read_text(encoding="utf-8-sig")
+    identified_text, applied_replacements = replace_speaker_labels(
+        source_text, replacements
+    )
+    identified_path = run_dir / f"{source_transcript.stem}_实名转写.md"
+    atomic_write_text(identified_path, identified_text)
+    metadata = {
+        "filename": identified_path.name,
+        "source_filename": source_transcript.name,
+        "replacements": applied_replacements,
+        "unresolved_labels": [
+            str(row["transcript_label"])
+            for row in resolved
+            if str(row.get("transcript_label") or "") not in replacements
+        ],
+        "original_preserved": True,
+    }
+    return identified_path, metadata
 
 
 def score(value: Any) -> str:
@@ -217,6 +264,9 @@ def build_feishu_summary(
         message_lines.append("")
     if warnings:
         message_lines.append(f"> 有 {len(warnings)} 个标签需要关注；识别结果不会自动修改正式声纹。")
+    message_lines.extend(
+        ["", "> 已生成实名转写；需要完整审计报告或转写文件时可继续索取。"]
+    )
     return {
         "schema_version": 1,
         "meeting": bundle["meeting"],
@@ -296,6 +346,10 @@ def write_outputs(
     csv_path = run_dir / "speaker_results.csv"
     report_path = run_dir / "report.md"
     feishu_path = run_dir / "feishu_summary.json"
+    identified_transcript_path, identified_metadata = write_identified_transcript(
+        run_dir, bundle["meeting"], resolved
+    )
+    payload["identified_transcript"] = identified_metadata
     atomic_write_json(json_path, payload)
 
     flat_rows: list[dict[str, Any]] = []
@@ -438,14 +492,16 @@ def write_outputs(
             "",
         ]
     )
-    report_path.write_text("\n".join(lines), encoding="utf-8")
+    atomic_write_text(report_path, "\n".join(lines))
     feishu_payload = build_feishu_summary(bundle, resolved, grouped)
     feishu_payload["detailed_report"] = str(report_path)
     feishu_payload["final_results"] = str(json_path)
+    feishu_payload["identified_transcript_path"] = str(identified_transcript_path)
     atomic_write_json(feishu_path, feishu_payload)
     return {
         "report": str(report_path),
         "json": str(json_path),
         "csv": str(csv_path),
         "feishu_summary": str(feishu_path),
+        "identified_transcript": str(identified_transcript_path),
     }

@@ -30,6 +30,7 @@ from speaker_engine.transcript import (
     format_timestamp,
     parse_timestamp,
     parse_transcript,
+    replace_speaker_labels,
 )
 from speaker_engine.constants import PIPELINE_CONFIG
 from speaker_engine.util import atomic_save_npz, atomic_write_json
@@ -113,6 +114,30 @@ def manifest(customer_id: str, customer_name: str, audio: str = "/tmp/a.wav", tr
 
 
 class TranscriptTests(unittest.TestCase):
+    def test_identified_transcript_replaces_headers_but_not_body_text(self) -> None:
+        source = (
+            "  说话人 1 00:00  \n"
+            "说话人 1提到需要确认范围。\n\n"
+            "**[00:04 - 00:08] 说话人 2**\n"
+            "第二句。\n\n"
+            "说话人 3 00:09\n"
+            "未知发言。\n"
+        )
+        rewritten, applied = replace_speaker_labels(
+            source, {"说话人 1": "张总", "说话人 2": "王老师"}
+        )
+        self.assertIn("  张总 00:00  \n", rewritten)
+        self.assertIn("说话人 1提到需要确认范围。", rewritten)
+        self.assertIn("**[00:04 - 00:08] 王老师**", rewritten)
+        self.assertIn("说话人 3 00:09", rewritten)
+        self.assertEqual(
+            applied,
+            [
+                {"transcript_label": "说话人 1", "identity": "张总"},
+                {"transcript_label": "说话人 2", "identity": "王老师"},
+            ],
+        )
+
     def test_timestamp_and_generic_named_label(self) -> None:
         self.assertEqual(parse_timestamp("01:01:19"), 3679)
         self.assertEqual(format_timestamp(3679), "01:01:19")

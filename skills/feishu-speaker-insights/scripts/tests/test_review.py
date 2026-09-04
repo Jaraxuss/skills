@@ -184,6 +184,28 @@ class ReviewFixture(unittest.TestCase):
         self.assertEqual(len(saved_manifest["meetings"]), 2)
         self.assertEqual(saved_manifest["meetings"][1]["audio_sha256"], sha256_file(second_audio))
 
+    def test_batch_manifest_preserves_api_content_ids_when_normalized_again(self) -> None:
+        raw = {
+            "schema_version": 1,
+            "customer": {"id": "customer-a", "name": "客户甲"},
+            "meetings": [
+                {
+                    "id": "meeting-content-hash",
+                    "title": "API 标题",
+                    "audio": str(self.audio),
+                    "transcript": str(self.transcript),
+                }
+            ],
+            "attendees": [
+                {"name": "图南", "role": "CSM", "organization": "yingdao"}
+            ],
+        }
+        first = normalize_review_manifest(raw)
+        second = normalize_review_manifest(first)
+        self.assertEqual(first["meetings"][0]["id"], "meeting-content-hash")
+        self.assertEqual(second["meetings"][0]["id"], "meeting-content-hash")
+        self.assertEqual(second["meetings"][0]["title"], "API 标题")
+
     def test_batch_source_verification_checks_every_recording(self) -> None:
         second_audio = self.root / "second.wav"
         second_transcript = self.root / "second.txt"

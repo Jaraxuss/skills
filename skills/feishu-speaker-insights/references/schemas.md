@@ -74,6 +74,8 @@ excluded_labels:
 
 OpenClaw 优先直接调用 HTTP API；不具备 HTTP 能力时，使用 `agent` 下的薄 CLI。首次建库使用 `enroll-start` 与 `enroll-confirm`，后续录音使用 `analyze-start`、`semantic-request`、`analyze-complete` 和 `report`。用户不输入技术任务 ID，OpenClaw 只在内部保存并传回。请求、确认绑定、幂等恢复和固定飞书消息格式见 [Agent 工作流](agent-workflows.md)。
 
+识别定稿后，后端除 JSON、CSV、详细报告和飞书简报外，还生成 `<原文件名>_实名转写.md`。该文件保持原文、时间戳与排版，只把有最终身份的标题标签替换为姓名。原转写永不覆盖；未知或不确定标签保持原样。可通过 HTTP `identified-transcript` 端点或 `agent identified-transcript` 薄 CLI 获取。
+
 ## 浏览器建库审核（复杂任务）
 
 多人员、超过三组候选、红色风险或需要逐片段处理的任务使用审核台。网页直接调用后端 API；OpenClaw 创建简单建库任务后，后端也会在不满足快速确认条件时返回 `review_mode=web_full` 和审核链接。Worker 的临时产物存放在：
@@ -178,6 +180,7 @@ speaker_insights.py agent semantic-request --task TASK_ID [--output semantic.jso
 speaker_insights.py agent analyze-complete --task TASK_ID --semantic-response SEMANTIC.json
 speaker_insights.py agent task-status --task TASK_ID
 speaker_insights.py agent report --task TASK_ID --format feishu|json|markdown [--output PATH]
+speaker_insights.py agent identified-transcript --task TASK_ID [--output identified_transcript.md]
 speaker_insights.py agent task-cancel --task TASK_ID
 speaker_insights.py agent task-retry --task TASK_ID
 speaker_insights.py agent analysis-correct --task TASK_ID --corrections CORRECTIONS.json

@@ -469,7 +469,7 @@ class DataStore:
         """Return operational counts for the local review console only."""
         with self.connect() as db:
             customer_total = len(self.discover_customers())
-            task_rows = db.execute(
+            session_status_rows = db.execute(
                 "SELECT status, COUNT(*) AS count FROM review_sessions GROUP BY status"
             ).fetchall()
             profile_people = int(
@@ -485,9 +485,26 @@ class DataStore:
                     "SELECT COUNT(*) FROM candidates WHERE status = 'pending_confirmation'"
                 ).fetchone()[0]
             )
+        task_counts = {
+            str(row["status"]): int(row["count"]) for row in session_status_rows
+        }
+        review_session_ids = {
+            str(item["session_id"]) for item in self.list_review_sessions()
+        }
+        for task in self.list_tasks(operation="enroll"):
+            checkpoint = task.get("checkpoint") or {}
+            if str(checkpoint.get("session_id") or "") in review_session_ids:
+                continue
+            mapped = {
+                "running": "preparing",
+                "waiting_worker": "preparing",
+                "waiting_confirmation": "review_required",
+                "completed": "committed",
+            }.get(str(task["status"]), str(task["status"]))
+            task_counts[mapped] = task_counts.get(mapped, 0) + 1
         return {
             "customers_total": customer_total,
-            "tasks": {str(row["status"]): int(row["count"]) for row in task_rows},
+            "tasks": task_counts,
             "active_profile_people": profile_people,
             "profile_versions_total": profile_versions,
             "pending_candidates": pending_candidates,
@@ -909,6 +926,33 @@ class DataStore:
                 self.resolve_storage_path(str(value["result_path"]), value["customer_id"])
             )
         return value
+
+    def list_tasks(
+        self,
+        *,
+        operation: str | None = None,
+        customer_id: str | None = None,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """List durable business tasks for operational UI summaries."""
+        clauses: list[str] = []
+        parameters: list[Any] = []
+        if operation:
+            clauses.append("operation = ?")
+            parameters.append(operation)
+        if customer_id:
+            clauses.append("customer_id = ?")
+            parameters.append(customer_id)
+        query = "SELECT task_id FROM task_executions"
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += " ORDER BY updated_at DESC, created_at DESC"
+        if limit is not None:
+            query += " LIMIT ?"
+            parameters.append(max(1, int(limit)))
+        with self.connect() as db:
+            rows = db.execute(query, tuple(parameters)).fetchall()
+        return [self.get_task(str(row["task_id"])) for row in rows]
 
     def find_task_by_request_hash(self, request_hash: str) -> dict[str, Any] | None:
         with self.connect() as db:

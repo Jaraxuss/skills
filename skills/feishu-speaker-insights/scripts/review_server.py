@@ -169,6 +169,70 @@ def _session_payload(store: DataStore, session_id: str, include_package: bool = 
     return result
 
 
+def _machine_enrollment_payload(store: DataStore, task: dict[str, Any]) -> dict[str, Any]:
+    """Expose an API-created enrollment before its review session exists."""
+    checkpoint = task.get("checkpoint") or {}
+    customer = store.get_customer(str(task["customer_id"]))
+    titles: list[str] = []
+    request_path = Path(task["artifact_dir"]) / "request.json"
+    with contextlib.suppress(Exception):
+        request = load_structured(request_path)
+        manifest = request.get("manifest") or {}
+        meetings = manifest.get("meetings") or (
+            [manifest["meeting"]] if manifest.get("meeting") else []
+        )
+        titles = [str(item.get("title") or "录音") for item in meetings]
+    display_title = "、".join(titles[:2])
+    if len(titles) > 2:
+        display_title += f" 等 {len(titles)} 份录音"
+    status = {
+        "running": "preparing",
+        "waiting_worker": "preparing",
+        "waiting_confirmation": "review_required",
+        "completed": "committed",
+    }.get(str(task["status"]), str(task["status"]))
+    return {
+        "session_id": "",
+        "task_id": str(task["task_id"]),
+        "source_kind": "machine_task",
+        "kind": "enrollment",
+        "status": status,
+        "phase": str(task.get("phase") or ""),
+        "revision": 0,
+        "customer_id": str(task["customer_id"]),
+        "customer_name": str(customer["name"]),
+        "display_title": display_title or "API 建库任务",
+        "meeting_titles": titles,
+        "recording_count": len(titles),
+        "task_type": "enrollment",
+        "progress": task.get("progress"),
+        "error_message": str((task.get("error_details") or {}).get("message") or "") or None,
+        "created_at": task.get("created_at"),
+        "updated_at": task.get("updated_at"),
+        "review_url": checkpoint.get("review_url"),
+    }
+
+
+def _combined_enrollment_sessions(
+    store: DataStore, customer_id: str | None = None
+) -> list[dict[str, Any]]:
+    sessions = [
+        _session_payload(store, item["session_id"], include_package=False)
+        for item in store.list_review_sessions(customer_id)
+    ]
+    session_ids = {str(item["session_id"]) for item in sessions}
+    for task in store.list_tasks(operation="enroll", customer_id=customer_id):
+        checkpoint = task.get("checkpoint") or {}
+        if str(checkpoint.get("session_id") or "") in session_ids:
+            continue
+        sessions.append(_machine_enrollment_payload(store, task))
+    sessions.sort(
+        key=lambda item: str(item.get("updated_at") or item.get("created_at") or ""),
+        reverse=True,
+    )
+    return sessions
+
+
 def _audio_stream(command: list[str]) -> Iterator[bytes]:
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     try:
@@ -327,6 +391,22 @@ def create_app(store: DataStore, *, base_url: str, download: bool = False) -> Fa
             filename=path.name,
         )
 
+    @app.get("/api/v1/analysis-tasks/{task_id}/identified-transcript")
+    def analysis_identified_transcript(task_id: str) -> Response:
+        require_operation(task_id, "analyze")
+        path = report_paths(task_id, store).get("identified_transcript")
+        if path is None:
+            raise StructuredError(
+                "IDENTIFIED_TRANSCRIPT_NOT_READY",
+                "实名转写尚未生成。",
+                retryable=True,
+            )
+        return FileResponse(
+            path,
+            media_type="text/markdown; charset=utf-8",
+            filename=path.name,
+        )
+
     @app.post("/api/v1/analysis-tasks/{task_id}/cancel")
     async def cancel_analysis_task(task_id: str, request: Request) -> dict[str, Any]:
         await machine_json(request)
@@ -399,10 +479,7 @@ def create_app(store: DataStore, *, base_url: str, download: bool = False) -> Fa
     @app.get("/api/v1/console/summary")
     def console_summary() -> dict[str, Any]:
         summary = store.console_summary()
-        recent = [
-            _session_payload(store, item["session_id"], include_package=False)
-            for item in store.list_review_sessions()[:8]
-        ]
+        recent = _combined_enrollment_sessions(store)[:8]
         return {**summary, "recent_sessions": recent}
 
     @app.get("/api/v1/customers/{customer_id}/files")
@@ -632,12 +709,7 @@ def create_app(store: DataStore, *, base_url: str, download: bool = False) -> Fa
 
     @app.get("/api/v1/enrollment-sessions")
     def sessions(customer_id: str | None = None) -> dict[str, Any]:
-        return {
-            "sessions": [
-                _session_payload(store, item["session_id"], include_package=False)
-                for item in store.list_review_sessions(customer_id)
-            ]
-        }
+        return {"sessions": _combined_enrollment_sessions(store, customer_id)}
 
     @app.get("/api/v1/enrollment-sessions/{session_id}")
     def session(session_id: str) -> dict[str, Any]:

@@ -177,8 +177,11 @@ export type Decision = {
 
 export type Session = {
   session_id: string;
+  task_id?: string;
+  source_kind?: "review_session" | "machine_task";
   kind: string;
   status: string;
+  phase?: string;
   revision: number;
   decision?: Decision | null;
   package?: Package;
@@ -192,6 +195,8 @@ export type Session = {
   display_title?: string;
   meeting_titles?: string[];
   recording_count?: number;
+  progress?: ReviewProgress | null;
+  review_url?: string;
   task_type?: string;
   updated_at?: string;
   created_at?: string;

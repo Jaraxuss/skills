@@ -141,27 +141,39 @@ function TaskRow({
       : session.kind === "profile_expansion"
         ? "声纹扩充"
         : "首次建库";
+  const contents = (
+    <>
+      <div className="task-row-title">
+        <TaskStatusIcon status={session.status} />
+        <div>
+          <strong>{session.display_title || "声纹审核任务"}</strong>
+          <span>
+            {taskType} · {session.customer_name || session.customer_id || "未命名客户"}
+            {session.kind === "enrollment"
+              ? ` · ${session.recording_count || 1} 份录音`
+              : ""}
+            {session.source_kind === "machine_task" && session.progress?.message
+              ? ` · ${session.progress.message}`
+              : ""}
+          </span>
+        </div>
+      </div>
+      <StatusBadge status={session.status} />
+      <time>{formatDate(session.updated_at || session.created_at)}</time>
+    </>
+  );
   return (
     <article className="task-row">
-      <Link
-        to={`/enrollments/${encodeURIComponent(session.session_id)}`}
-        className="task-row-link"
-      >
-        <div className="task-row-title">
-          <TaskStatusIcon status={session.status} />
-          <div>
-            <strong>{session.display_title || "声纹审核任务"}</strong>
-            <span>
-              {taskType} · {session.customer_name || session.customer_id || "未命名客户"}
-              {session.kind === "enrollment"
-                ? ` · ${session.recording_count || 1} 份录音`
-                : ""}
-            </span>
-          </div>
-        </div>
-        <StatusBadge status={session.status} />
-        <time>{formatDate(session.updated_at || session.created_at)}</time>
-      </Link>
+      {session.session_id ? (
+        <Link
+          to={`/enrollments/${encodeURIComponent(session.session_id)}`}
+          className="task-row-link"
+        >
+          {contents}
+        </Link>
+      ) : (
+        <div className="task-row-link task-row-static">{contents}</div>
+      )}
       {action && <div className="task-row-action">{action}</div>}
     </article>
   );
@@ -244,7 +256,7 @@ export function DashboardPage() {
               {summary.recent_sessions.length ? (
                 <div className="task-list">
                   {summary.recent_sessions.slice(0, 6).map((session) => (
-                    <TaskRow key={session.session_id} session={session} />
+                    <TaskRow key={session.session_id || session.task_id} session={session} />
                   ))}
                 </div>
               ) : (
@@ -432,9 +444,10 @@ export function EnrollmentListPage() {
           <div className="task-list">
             {filtered.map((session) => (
               <TaskRow
-                key={session.session_id}
+                key={session.session_id || session.task_id}
                 session={session}
                 action={
+                  Boolean(session.session_id) &&
                   session.status === "cancelled" &&
                   session.kind === "enrollment" ? (
                     <button
@@ -447,7 +460,8 @@ export function EnrollmentListPage() {
                       <RotateCcw size={14} />
                       重新开始
                     </button>
-                  ) : session.status === "failed" &&
+                  ) : Boolean(session.session_id) &&
+                    session.status === "failed" &&
                     session.can_retry_edit ? (
                     <button
                       type="button"

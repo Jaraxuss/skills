@@ -37,9 +37,11 @@ API 地址优先来自 `FEISHU_SPEAKER_API_URL`。没有直接 HTTP 能力时，
    - 可回查的上下文身份证据；
    - 覆盖每个 `required_labels` 的核心观点、发言摘要或有依据的非实质分类。
 4. 提交 `/semantic-result`。若返回 `semantic_revision_required`，按 `details` 修复同一任务，不新建任务。
-5. 完成后读取 `/report?format=feishu`，在同一次最终交付中原样发送 `message_markdown`，并下载、上传 `delivery_contract.markdown_attachment` 指向的 Markdown 报告。必须分别检查消息与文件发送工具的成功回执；只有两者都成功时才能说“报告已发送”。附件失败时仍发送简报，并明确说明附件未发成功及可重试，不能用口头描述代替文件发送。结构化处理使用 `format=json`。
+5. 完成后读取 `/report?format=feishu`，默认只原样发送 `message_markdown`。消息发送成功即可结束本轮，不默认上传完整报告。用户明确索要详细报告时，再下载 `delivery_contract.detailed_report_on_request.url` 并真实上传；用户索要实名转写时，下载 `artifacts.identified_transcript.url` 并真实上传。文件发送必须检查成功回执，不能以口头说明代替。结构化处理使用 `format=json`。
 
 不要让 OpenClaw 自行改变 Top-1/Top-2、相似度、身份状态或消息模板。简报使用多窗口聚合相似度、一致片段数和候选分差；详细报告保留保守分段分数。两种相似度都是候选集声纹证据，不是认证概率。
+
+后端会在每次定稿时自动生成 `<原文件名>_实名转写.md`。它只把可识别标签的标题替换为最终身份，不覆盖原始转写；未知、混合、有效语音不足和证据不足标签保持原样。本次报告经人工纠正后，后端会生成对应的纠正版实名转写。OpenClaw 不得自行对全文做字符串替换。
 
 ## 纠正与扩充分离
 

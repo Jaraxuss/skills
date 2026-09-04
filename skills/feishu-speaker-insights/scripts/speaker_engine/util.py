@@ -105,6 +105,21 @@ def atomic_write_json(path: Path, value: Any) -> None:
             os.unlink(temporary)
 
 
+def atomic_write_text(path: Path, value: str) -> None:
+    ensure_private_dir(path.parent)
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(value)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, path)
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(temporary)
+
+
 def atomic_save_npz(path: Path, **arrays: np.ndarray) -> None:
     ensure_private_dir(path.parent)
     fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".npz", dir=path.parent)

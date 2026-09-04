@@ -17,6 +17,7 @@ if str(SCRIPTS) not in sys.path:
 
 from speaker_engine.agent import (
     _audition_bundle,
+    _quick_candidates,
     agent_analysis_correct,
     agent_analyze_complete,
     agent_analyze_start,
@@ -165,6 +166,7 @@ class AgentWorkflowTests(unittest.TestCase):
         self.assertEqual(summary["speakers"][0]["matches"][0]["top1"]["name"], "张总")
         self.assertIn("核心观点", summary["message_markdown"])
         self.assertIn("声纹排序", summary["message_markdown"])
+        self.assertIn("已生成实名转写", summary["message_markdown"])
 
     def test_report_separates_label_hint_from_semantic_context(self) -> None:
         run_dir = self.root / "report-output"
@@ -215,6 +217,14 @@ class AgentWorkflowTests(unittest.TestCase):
         self.assertIn("不是独立的语义身份证据", report)
         self.assertIn("## 可审计上下文身份证据", report)
         self.assertIn("点名或提问后", report)
+        identified = Path(outputs["identified_transcript"]).read_text(encoding="utf-8")
+        self.assertIn("张总 00:00", identified)
+        self.assertNotIn("说话人 1 00:00", identified)
+        final_results = json.loads(Path(outputs["json"]).read_text(encoding="utf-8"))
+        self.assertEqual(
+            final_results["identified_transcript"]["replacements"],
+            [{"transcript_label": "说话人 1", "identity": "张总"}],
+        )
 
     def test_combined_audition_audio_is_a_single_playable_ogg(self) -> None:
         package = {
@@ -240,6 +250,58 @@ class AgentWorkflowTests(unittest.TestCase):
         info = sf.info(result)
         self.assertEqual(info.samplerate, 16000)
         self.assertGreater(info.frames, 16000)
+
+    def test_quick_enrollment_ignores_named_non_target_label_risk(self) -> None:
+        package = {
+            "segments": [
+                {
+                    "segment_id": "target-segment",
+                    "display_label": "说话人 1",
+                    "timestamp": "00:10",
+                    "text": "目标人员发言",
+                },
+                {
+                    "segment_id": "staff-segment",
+                    "display_label": "图南",
+                    "timestamp": "00:00",
+                    "text": "我方人员发言",
+                },
+            ],
+            "labels": [
+                {
+                    "label": "会议 · 图南",
+                    "raw_label": "图南",
+                    "risk": "yellow",
+                    "suggestion": {
+                        "person_id": "staff-tunan",
+                        "source": "exact_named_label",
+                    },
+                    "clusters": [
+                        {"cluster_id": "other-1", "segment_ids": ["staff-segment"]},
+                        {"cluster_id": "other-2", "segment_ids": ["staff-segment"]},
+                    ],
+                },
+                {
+                    "label": "会议 · 说话人 1",
+                    "raw_label": "说话人 1",
+                    "risk": "green",
+                    "suggestion": {
+                        "person_id": "staff-tunan",
+                        "source": "voiceprint_top1",
+                    },
+                    "clusters": [
+                        {
+                            "cluster_id": "target-1",
+                            "segment_ids": ["target-segment"],
+                            "representative_segment_ids": ["target-segment"],
+                        }
+                    ],
+                },
+            ],
+        }
+        candidates, reasons = _quick_candidates(package, "staff-ziye")
+        self.assertEqual([item["candidate_id"] for item in candidates], ["target-1"])
+        self.assertEqual(reasons, [])
 
     def test_quick_confirmation_is_idempotent_and_records_feishu_mode(self) -> None:
         session_id = "review-agent-unit"
@@ -453,6 +515,10 @@ class AgentWorkflowTests(unittest.TestCase):
         self.assertFalse(corrected["voiceprint_changed"])
         self.assertTrue(corrected_again["reused"])
         self.assertEqual(before, after)
+        corrected_transcript = Path(
+            corrected["outputs"]["identified_transcript"]
+        ).read_text(encoding="utf-8")
+        self.assertIn("现场专家 00:00", corrected_transcript)
 
     def bundle(self) -> dict:
         return {

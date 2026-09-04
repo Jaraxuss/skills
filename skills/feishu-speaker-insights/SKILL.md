@@ -32,6 +32,7 @@ description: 使用客户隔离的本地声纹识别飞书妙记中的匿名说�
 - 后续录音产生的声纹扩充候选不会自动进入正式库。当前版本中，同一人的多个候选仍分别审核；混合标签暂不自动二次拆分。
 - 审核服务只能在本机或可信局域网运行，不得暴露到公网。
 - OpenClaw 不得读取 SQLite、声纹 NPZ/JSON、`FEISHU_SPEAKER_CUSTOMERS_ROOT`，也不得向业务请求传绝对路径或 `--customers-root`。客户和文件位置只能通过后端 API 解析。
+- 后端定稿时必须自动生成独立的实名转写文件，只替换可识别的转写标题标签，不覆盖原始转写；未知、混合和证据不足标签保持原样。人工纠正本次身份后同步生成纠正版实名转写。
 
 ## 标准执行方式
 
@@ -39,7 +40,7 @@ description: 使用客户隔离的本地声纹识别飞书妙记中的匿名说�
 2. 录音和转写由 Agent 下载到所选客户目录；业务请求只传客户内相对路径。后端不可用时停止，不回退为本地模型或数据库操作。
 3. 创建异步任务并轮询状态；`task_id`、`session_id`、候选不可变 ID 和哈希只保存在 Agent 状态中。
 4. 根据语义请求生成符合 [数据格式](references/schemas.md) 的结果。失败时读取 `error_code`、`retryable` 和 `details`，修复后继续原任务。
-5. 完成后在同一次最终交付中发送后端 `format=feishu` 返回的 `message_markdown`，并真实上传其 `delivery_contract.markdown_attachment` 指向的 Markdown 报告。两次发送均收到飞书成功回执后，才能告诉用户“报告已发送”；附件失败时保留简报并明确告知失败，不得口头声称已发送。
+5. 完成后默认只发送后端 `format=feishu` 返回的 `message_markdown`；消息发送成功后即可告知用户识别完成。完整 Markdown 报告和实名转写均由后端保留，只有用户明确索要“详细报告”或“实名转写”时才下载并真实上传对应文件，收到文件发送回执后再声称已发送。
 6. 简单建库发送后端生成的合并试听；复杂任务把 `review_url` 交给用户，不在聊天中逐标签追问。
 
 管理员安装、迁移和排障才使用 `scripts/speaker_insights.py doctor|paths|migrate|admin|offline|review serve`。这些命令见 [部署说明](references/deployment.md)；不要把管理员直连能力用于 OpenClaw 业务流程。
