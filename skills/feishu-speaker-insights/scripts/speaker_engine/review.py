@@ -189,7 +189,7 @@ def create_enrollment_review(
         _recording_digest(meetings, "transcript_sha256"),
         expires_days,
     )
-    review_url = f"{base_url.rstrip('/')}/sessions/{session_id}" if base_url else None
+    review_url = f"{base_url.rstrip('/')}/enrollments/{session_id}" if base_url else None
     return {"session_id": session_id, "status": session["status"], "review_url": review_url}
 
 
@@ -324,7 +324,7 @@ def create_profile_review(
     package_path = session_dir / "review_package.json"
     atomic_write_json(package_path, package)
     store.set_review_session(session_id, status="review_required", package_path=package_path, event_type="profile_review_prepared")
-    review_url = f"{base_url.rstrip('/')}/sessions/{session_id}" if base_url else None
+    review_url = f"{base_url.rstrip('/')}/enrollments/{session_id}" if base_url else None
     return {"session_id": session_id, "status": "review_required", "review_url": review_url}
 
 

@@ -1809,12 +1809,14 @@ function BuildProgress({
   decision,
   requirements,
   revisionMode = false,
+  targetPersonId,
 }: {
   people: Person[];
   segments: Segment[];
   decision: Decision;
   requirements: Package["selection_requirements"];
   revisionMode?: boolean;
+  targetPersonId?: string;
 }) {
   return (
     <section className="build-progress-card">
@@ -1826,8 +1828,12 @@ function BuildProgress({
         <CheckCircle2 size={18} className="section-icon" />
       </div>
       <p className="side-card-hint">
-        {revisionMode ? "新版本" : "每人"}至少 {requirements.minimum_windows} 段、
-        {requirements.minimum_seconds} 秒有效语音。
+        {targetPersonId
+          ? "已恢复飞书快捷流程的唯一候选；本次目标"
+          : revisionMode
+            ? "新版本"
+            : "每人"}
+        至少 {requirements.minimum_windows} 段、{requirements.minimum_seconds} 秒有效语音。
       </p>
       <div className="person-progress-list">
         {people.map((person) => {
@@ -1843,6 +1849,10 @@ function BuildProgress({
           const ready =
             chosen.length >= requirements.minimum_windows &&
             seconds >= requirements.minimum_seconds;
+          const optionalUnselected =
+            Boolean(targetPersonId) &&
+            person.person_id !== targetPersonId &&
+            chosen.length === 0;
           return (
             <article
               className={ready ? "person-progress ready" : "person-progress"}
@@ -1850,7 +1860,15 @@ function BuildProgress({
             >
               <div className="person-progress-top">
                 <strong>{personText(person)}</strong>
-                <span>{ready ? (revisionMode ? "可保存" : "可建库") : "待补充"}</span>
+                <span>
+                  {optionalUnselected
+                    ? "本次不建库"
+                    : ready
+                      ? revisionMode
+                        ? "可保存"
+                        : "可建库"
+                      : "待补充"}
+                </span>
               </div>
               <ProgressBar
                 value={
@@ -2145,6 +2163,10 @@ function ReviewPage({
       ]),
     ).values(),
   );
+  const quickTargetPersonId =
+    decision.source_mode === "feishu_quick"
+      ? decision.target_person_id
+      : undefined;
   const labelHandled = (item: Label) =>
     packageData.segments
       .filter((segment) => displayLabel(segment) === item.label)
@@ -2665,11 +2687,14 @@ function ReviewPage({
                 decision={decision}
                 requirements={packageData.selection_requirements}
                 revisionMode={revisionMode}
+                targetPersonId={quickTargetPersonId}
               />
               <section className="commit-card">
                 <p>
                   {revisionMode
                     ? `确认后会从 ${profileVersionLabel(packageData.profile_revision?.base_version || 0)} 派生不可变的新版本；被排除的片段不会进入新版。`
+                    : quickTargetPersonId
+                      ? "已从飞书恢复唯一候选的预选结果；点击确认后才会创建正式声纹版本。"
                     : "确认后会创建正式声纹版本；未分配、未知、路人/杂音和暂不建库的片段不会写入声纹库。"}
                 </p>
                 {!revisionMode && (

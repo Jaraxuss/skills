@@ -449,6 +449,137 @@ def _agent_enrollment_payload(
     }
 
 
+def _quick_review_decision(
+    package: dict[str, Any],
+    agent_payload: dict[str, Any],
+    selected: list[dict[str, Any]],
+    *,
+    confirmation: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build the shared browser/chat decision for a quick enrollment."""
+    target_id = str((agent_payload.get("target_person") or {}).get("person_id") or "")
+    if not target_id:
+        raise StructuredError(
+            "ENROLLMENT_TARGET_MISSING",
+            "快捷审核缺少目标人员。",
+            retryable=False,
+        )
+    assignments = {
+        str(item["segment_id"]): "skip" for item in package.get("segments", [])
+    }
+    for candidate in selected:
+        for raw_segment_id in candidate.get("segment_ids") or []:
+            segment_id = str(raw_segment_id)
+            if segment_id not in assignments:
+                raise StructuredError(
+                    "ENROLLMENT_REVIEW_MISMATCH",
+                    "快捷候选与审核包不一致。",
+                    details={"segment_id": segment_id},
+                    retryable=False,
+                )
+            assignments[segment_id] = target_id
+    decision: dict[str, Any] = {
+        "assignments": assignments,
+        "new_people": [],
+        "source_mode": "feishu_quick",
+        "target_person_id": target_id,
+    }
+    if confirmation is not None:
+        decision.update(
+            acknowledge_warnings=True,
+            confirmation=confirmation,
+        )
+    return decision
+
+
+def _seed_single_candidate_quick_decision(
+    session_id: str,
+    package: dict[str, Any],
+    agent_payload: dict[str, Any],
+    store: DataStore,
+) -> dict[str, Any]:
+    """Persist the only safe implicit selection for browser handoff.
+
+    A single quick candidate needs no A/B/C choice, so both Feishu and the web
+    console can share the same draft immediately.  Multiple candidates stay
+    unassigned until a human chooses among them.
+    """
+    session = store.get_review_session(session_id)
+    candidates = list(agent_payload.get("candidates") or [])
+    if (
+        session["status"] != "review_required"
+        or session.get("decision") is not None
+        or agent_payload.get("review_mode") != "feishu_quick"
+        or len(candidates) != 1
+    ):
+        return session
+    decision = _quick_review_decision(package, agent_payload, candidates)
+    try:
+        return save_review_decision(
+            session_id,
+            decision,
+            int(session["revision"]),
+            store,
+            client={
+                "channel": "feishu_quick",
+                "stage": "single_candidate_prefill",
+            },
+        )
+    except RuntimeError as exc:
+        # A browser save that wins this narrow race is authoritative; never
+        # overwrite a human decision with the automatic draft.
+        if str(exc) != "review_revision_conflict":
+            raise
+        return store.get_review_session(session_id)
+
+
+def _ensure_task_quick_decision(task: dict[str, Any], store: DataStore) -> None:
+    """Backfill a prepared one-candidate task created by an older release."""
+    checkpoint = task.get("checkpoint") or {}
+    session_id = str(checkpoint.get("session_id") or "")
+    agent_path = Path(str(checkpoint.get("agent_enrollment") or ""))
+    if not session_id or not agent_path.is_file():
+        return
+    session = store.get_review_session(session_id)
+    package_path = Path(str(session.get("package_path") or ""))
+    if not package_path.is_file():
+        return
+    _seed_single_candidate_quick_decision(
+        session_id,
+        load_structured(package_path),
+        load_structured(agent_path),
+        store,
+    )
+
+
+def repair_quick_enrollment_drafts(store: DataStore) -> list[str]:
+    """Restore deterministic drafts for active tasks from older releases."""
+    repaired: list[str] = []
+    for task in store.list_tasks(operation="enroll"):
+        if (
+            task.get("status") != "waiting_confirmation"
+            or task.get("phase") != "waiting_chat_confirmation"
+        ):
+            continue
+        checkpoint = task.get("checkpoint") or {}
+        session_id = str(checkpoint.get("session_id") or "")
+        if not session_id:
+            continue
+        try:
+            before = store.get_review_session(session_id)
+            if before.get("decision") is not None:
+                continue
+            _ensure_task_quick_decision(task, store)
+            after = store.get_review_session(session_id)
+        except (FileNotFoundError, KeyError, RuntimeError, StructuredError, ValueError):
+            # A stale or incomplete historical task must not prevent the
+            # service from starting; it remains visible for manual handling.
+            continue
+        if (after.get("decision") or {}).get("source_mode") == "feishu_quick":
+            repaired.append(session_id)
+    return repaired
+
+
 def _agent_enroll_start_impl(
     request_path: Path,
     store: DataStore,
@@ -469,6 +600,7 @@ def _agent_enroll_start_impl(
     )
     checkpoint = task.get("checkpoint") or {}
     if reused and checkpoint.get("agent_enrollment"):
+        _ensure_task_quick_decision(task, store)
         session_id = checkpoint.get("session_id")
         if session_id:
             session = store.get_review_session(str(session_id))
@@ -582,6 +714,12 @@ def _agent_enroll_start_impl(
     )
     agent_path = Path(session["package_path"]).parent / "agent_enrollment.json"
     atomic_write_json(agent_path, agent_payload)
+    _seed_single_candidate_quick_decision(
+        session_id,
+        package,
+        agent_payload,
+        store,
+    )
     phase = (
         "waiting_chat_confirmation"
         if agent_payload["review_mode"] == "feishu_quick"
@@ -738,24 +876,21 @@ def agent_enroll_confirm(request_path: Path, store: DataStore) -> dict[str, Any]
         )
         return _task_response(task, reused=True)
     package = load_structured(Path(session["package_path"]))
-    target_id = str(agent_payload["target_person"]["person_id"])
-    assignments = {str(item["segment_id"]): "skip" for item in package["segments"]}
-    for candidate in selected:
-        for segment_id in candidate["segment_ids"]:
-            assignments[str(segment_id)] = target_id
-    decision = {
-        "assignments": assignments,
-        "new_people": [],
-        "acknowledge_warnings": True,
-        "confirmation": {
-            "mode": "feishu_message_confirmed",
-            "message_id": message_id,
-            "user_id": str(request.get("user_id") or "") or None,
-            "chat_id": str(request.get("chat_id") or "") or None,
-            "confirmation_text": confirmation_text,
-            "confirmed_at": now_iso(),
-        },
+    confirmation = {
+        "mode": "feishu_message_confirmed",
+        "message_id": message_id,
+        "user_id": str(request.get("user_id") or "") or None,
+        "chat_id": str(request.get("chat_id") or "") or None,
+        "confirmation_text": confirmation_text,
+        "confirmed_at": now_iso(),
     }
+    decision = _quick_review_decision(
+        package,
+        agent_payload,
+        selected,
+        confirmation=confirmation,
+    )
+    assignments = decision["assignments"]
     checkpoint = {
         **checkpoint,
         "pending_commit": {
@@ -1067,6 +1202,7 @@ def agent_task_status(task_id: str, store: DataStore) -> dict[str, Any]:
     checkpoint = task.get("checkpoint") or {}
     session_id = checkpoint.get("session_id")
     if task["operation"] == "enroll" and session_id:
+        _ensure_task_quick_decision(task, store)
         session = store.get_review_session(str(session_id))
         if session["status"] == "committed" and task["status"] != "completed":
             result = load_structured(Path(session["result_path"]))

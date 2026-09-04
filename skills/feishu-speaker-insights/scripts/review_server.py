@@ -31,6 +31,7 @@ from speaker_engine.review import (
     validate_review_decision,
 )
 from speaker_engine.errors import StructuredError
+from speaker_engine.agent import repair_quick_enrollment_drafts
 from speaker_engine.maintenance import service_runtime_lock
 from speaker_engine.service import (
     ServiceWorker,
@@ -269,6 +270,12 @@ def create_app(store: DataStore, *, base_url: str, download: bool = False) -> Fa
         recovered = store.recover_expired_tasks(force=True)
         if recovered:
             LOG.warning("recovered expired tasks: %s", ", ".join(recovered))
+        repaired_drafts = repair_quick_enrollment_drafts(store)
+        if repaired_drafts:
+            LOG.info(
+                "restored quick enrollment drafts: %s",
+                ", ".join(repaired_drafts),
+            )
         thread = threading.Thread(target=worker_loop, name="speaker-service-worker", daemon=True)
         app.state.worker_thread = thread
         thread.start()

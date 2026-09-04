@@ -4,7 +4,7 @@ import { DashboardPage, EnrollmentListPage, NewEnrollmentPage, ProfilesPage, Rev
 import './style.css'
 
 function App() {
-  return <BrowserRouter><Routes><Route path="/" element={<DashboardPage />} /><Route path="/enrollments" element={<EnrollmentListPage />} /><Route path="/enrollments/new" element={<NewEnrollmentPage />} /><Route path="/enrollments/:sessionId" element={<ReviewRoute />} /><Route path="/profiles" element={<ProfilesPage />} /><Route path="*" element={<Navigate to="/" replace />} /></Routes></BrowserRouter>
+  return <BrowserRouter><Routes><Route path="/" element={<DashboardPage />} /><Route path="/enrollments" element={<EnrollmentListPage />} /><Route path="/enrollments/new" element={<NewEnrollmentPage />} /><Route path="/enrollments/:sessionId" element={<ReviewRoute />} /><Route path="/sessions/:sessionId" element={<ReviewRoute />} /><Route path="/profiles" element={<ProfilesPage />} /><Route path="*" element={<Navigate to="/" replace />} /></Routes></BrowserRouter>
 }
 
 document.title = '声纹建库控制台'

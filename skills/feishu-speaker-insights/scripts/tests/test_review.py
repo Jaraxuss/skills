@@ -178,7 +178,13 @@ class ReviewFixture(unittest.TestCase):
         self.assertEqual([item["title"] for item in normalized["meetings"]], ["source", "第二场"])
         manifest_path = self.root / "batch.json"
         atomic_write_json(manifest_path, raw)
-        created = create_enrollment_review(manifest_path, self.store)
+        created = create_enrollment_review(
+            manifest_path, self.store, base_url="http://testserver"
+        )
+        self.assertEqual(
+            created["review_url"],
+            f"http://testserver/enrollments/{created['session_id']}",
+        )
         session = self.store.get_review_session(created["session_id"])
         saved_manifest = json.loads(Path(session["manifest_path"]).read_text(encoding="utf-8"))
         self.assertEqual(len(saved_manifest["meetings"]), 2)

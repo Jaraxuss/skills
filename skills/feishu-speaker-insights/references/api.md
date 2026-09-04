@@ -142,7 +142,9 @@ POST /api/v1/enrollment-tasks/{task_id}/cancel
 POST /api/v1/enrollment-tasks/{task_id}/retry
 ```
 
-一个明确目标人、最多三组非红色单聚类候选时返回 `review_mode: feishu_quick`、固定消息、合并试听地址和 A/B/C。否则返回 `review_mode: web_full`、原因和 `review_url`。两种模式共用同一个审核会话。
+一个明确目标人、最多三组非红色单聚类候选时返回 `review_mode: feishu_quick`、固定消息、合并试听地址和 A/B/C。否则返回 `review_mode: web_full`、原因和 `review_url`。两种模式共用同一个审核会话，`review_url` 使用 `/enrollments/{session_id}`；旧版 `/sessions/{session_id}` 链接仍兼容打开。
+
+快捷模式只有一个候选时，后端会立即在该审核会话保存待确认决策：唯一候选的全部片段分配给目标人员，其余片段标为 `skip`。因此网页接管时应恢复为可直接确认的状态；这次保存只增加审核修订号，不创建正式声纹。存在两到三个候选时，在用户明确选择 A/B/C 前不得擅自预选。
 
 确认请求：
 

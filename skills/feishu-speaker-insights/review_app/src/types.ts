@@ -173,6 +173,8 @@ export type Decision = {
   new_people: NewPerson[];
   acknowledge_warnings?: boolean;
   make_current?: boolean;
+  source_mode?: "feishu_quick";
+  target_person_id?: string;
 };
 
 export type Session = {

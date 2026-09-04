@@ -18,10 +18,13 @@ if str(SCRIPTS) not in sys.path:
 from speaker_engine.agent import (
     _audition_bundle,
     _quick_candidates,
+    _seed_single_candidate_quick_decision,
     agent_analysis_correct,
     agent_analyze_complete,
     agent_analyze_start,
     agent_enroll_confirm,
+    agent_task_status,
+    repair_quick_enrollment_drafts,
 )
 from speaker_engine.reporting import build_feishu_summary, write_outputs
 from speaker_engine.storage import DataStore
@@ -303,6 +306,31 @@ class AgentWorkflowTests(unittest.TestCase):
         self.assertEqual([item["candidate_id"] for item in candidates], ["target-1"])
         self.assertEqual(reasons, [])
 
+    def test_multiple_quick_candidates_are_not_prefilled(self) -> None:
+        session = {"status": "review_required", "decision": None, "revision": 0}
+        package = {
+            "segments": [
+                {"segment_id": "segment-a"},
+                {"segment_id": "segment-b"},
+            ]
+        }
+        payload = {
+            "review_mode": "feishu_quick",
+            "target_person": self.person,
+            "candidates": [
+                {"candidate_id": "candidate-a", "segment_ids": ["segment-a"]},
+                {"candidate_id": "candidate-b", "segment_ids": ["segment-b"]},
+            ],
+        }
+        with patch.object(
+            self.store, "get_review_session", return_value=session
+        ), patch("speaker_engine.agent.save_review_decision") as save:
+            result = _seed_single_candidate_quick_decision(
+                "review-multiple", package, payload, self.store
+            )
+        self.assertIs(result, session)
+        save.assert_not_called()
+
     def test_quick_confirmation_is_idempotent_and_records_feishu_mode(self) -> None:
         session_id = "review-agent-unit"
         session_dir = self.store.session_dir("customer-a", session_id)
@@ -402,6 +430,26 @@ class AgentWorkflowTests(unittest.TestCase):
                 },
             },
         )
+        # An older prepared task with no decision is repaired on service start.
+        # The web console then opens with the sole candidate already assigned,
+        # while formal enrollment still awaits confirmation.
+        self.assertEqual(
+            repair_quick_enrollment_drafts(self.store),
+            [session_id],
+        )
+        seeded = self.store.get_review_session(session_id)
+        self.assertEqual(seeded["revision"], 1)
+        self.assertEqual(
+            set(seeded["decision"]["assignments"].values()),
+            {self.person["person_id"]},
+        )
+        self.assertEqual(seeded["decision"]["source_mode"], "feishu_quick")
+        self.assertEqual(
+            seeded["decision"]["target_person_id"], self.person["person_id"]
+        )
+        # Status polling performs the same repair path and remains idempotent.
+        agent_task_status(task["task_id"], self.store)
+        self.assertEqual(self.store.get_review_session(session_id)["revision"], 1)
         confirmation = self.root / "confirmation.json"
         atomic_write_json(
             confirmation,

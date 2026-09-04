@@ -385,9 +385,16 @@ def task_payload(
             "details": task.get("error_details") or {},
         }
     if task["operation"] == "enroll" and checkpoint.get("review_mode"):
+        review_url = checkpoint.get("review_url")
+        if session_id:
+            # Always return the current canonical UI route, including for
+            # tasks whose checkpoint was written by the old /sessions route.
+            review_url = (
+                f"{base_url.rstrip('/')}/enrollments/{session_id}"
+            )
         response.update(
             review_mode=checkpoint.get("review_mode"),
-            review_url=checkpoint.get("review_url"),
+            review_url=review_url,
             reason=checkpoint.get("reason"),
             message_markdown=checkpoint.get("message_markdown"),
             target_person=checkpoint.get("target_person"),
