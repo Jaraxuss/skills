@@ -1,0 +1,4 @@
+interface:
+  display_name: "影刀需求文档生成"
+  short_description: "将录屏、截图和样例数据整理为可开发的影刀流程需求文档"
+  default_prompt: "使用 $yingdao-requirement-doc 将这些资料整理成可直接开发和验收的影刀需求文档。"

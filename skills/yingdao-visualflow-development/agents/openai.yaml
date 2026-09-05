@@ -1,0 +1,4 @@
+interface:
+  display_name: "影刀 VisualFlow 规范开发"
+  short_description: "结合影刀 MCP 和开发规范创建、测试并交付可视化流程"
+  default_prompt: "使用 $yingdao-visualflow-development 根据已确认需求在影刀中实现并验证 VisualFlow。"
