@@ -26,4 +26,4 @@ description: 根据录屏或录音转写、沟通截图、样例数据和已有�
 
 ## 开发交接
 
-交接给开发 Skill 时，至少提供需求文档路径、拟开发模式、输入参数、输出契约、必要资源、验收样例和仍未解决的问题。若用户随后授权开发，再选择 `$yingdao-codeflow-mcp` 或 `$yingdao-visualflow-mcp`。
+交接给开发 Skill 时，至少提供需求文档路径、拟开发模式、输入参数、输出契约、必要资源、验收样例和仍未解决的问题。若用户随后授权开发，再选择 `$yingdao-codeflow-development` 或 `$yingdao-visualflow-development`。
