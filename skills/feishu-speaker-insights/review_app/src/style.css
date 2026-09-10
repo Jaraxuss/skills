@@ -103,9 +103,13 @@ p {
   width: 34px;
   height: 34px;
   border-radius: 10px;
-  background: linear-gradient(135deg, #6877ff, #3d4cbf);
-  color: white;
   box-shadow: 0 5px 18px rgba(91, 108, 255, 0.3);
+  overflow: hidden;
+}
+.brand-mark img {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 .brand strong,
 .brand span {

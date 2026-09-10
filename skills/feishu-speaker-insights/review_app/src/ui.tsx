@@ -10,7 +10,6 @@ import {
   FileAudio,
   LayoutDashboard,
   ListChecks,
-  Mic2,
   Plus,
   ShieldCheck,
   UsersRound,
@@ -165,7 +164,7 @@ export function AppShell({
       <aside className="app-sidebar">
         <div className="brand">
           <div className="brand-mark">
-            <Mic2 size={19} />
+            <img src="/brand-mark.svg" alt="" aria-hidden="true" />
           </div>
           <div>
             <strong>声纹建库</strong>

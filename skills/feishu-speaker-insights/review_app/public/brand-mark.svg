@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="声纹建库">
+  <defs>
+    <linearGradient id="brand-gradient" x1="8" y1="6" x2="56" y2="58" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6877FF" />
+      <stop offset="1" stop-color="#3D4CBF" />
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="18" fill="url(#brand-gradient)" />
+  <g fill="none" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="m29.3 22.9-16 21.8a2.7 2.7 0 0 0 .3 3.5l2.2 2.2a2.7 2.7 0 0 0 3.5.2l21-16" />
+    <path d="M44 56.5c-2.7-1.8-5.7-3.1-9.3-3.1-5.5 0-10.5 6.3-16 5.3-5.5-.9-7.4-9-4-12" />
+    <circle cx="42.7" cy="21.3" r="13.3" />
+  </g>
+</svg>
