@@ -1,6 +1,6 @@
 # 只读 CLI 回退
 
-仅在 `customer-wechat-readonly` MCP 不可用时读取本页。历史 CLI 模块名仍为 `scripts.customer_wechat_cli`，它调用与 MCP 相同的只读 API，支持微信及飞书已纳入资料；不要因此改成直接查询聊天源。
+仅在 `customer-wechat-readonly` MCP 不可用时读取本页。历史 CLI 模块名仍为 `scripts.customer_wechat_cli`，它调用与 MCP 相同的只读 API，支持微信、飞书及钉钉已纳入资料；不要因此改成直接查询聊天源。
 
 Ubuntu 项目目录为 `/home/velen/velen/customer-wechat`，解释器为 `/home/velen/miniconda3/envs/llm/bin/python`，只读凭据由客户端从 `~/.config/customer-wechat/agent.json` 加载，不输出或复制凭据。
 
