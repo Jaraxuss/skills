@@ -1,0 +1,4 @@
+interface:
+  display_name: "需求说人话"
+  short_description: "把梳理好的客户业务转成简短自然的需求，用于影刀 AI 流程助手工作坊"
+  default_prompt: "使用 $yingdao-requirement-plain-language，把我们已经梳理的客户业务整理成一段可以直接发给影刀 AI 流程助手的简短需求，并交代需要提供的输入。"
