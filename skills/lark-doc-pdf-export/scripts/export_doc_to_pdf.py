@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Export a Feishu/Lark docx (or wiki node wrapping docx) to PDF when the
-document's download/export permission is disabled.
+Export a Feishu/Lark docx (or wiki node wrapping docx) to PDF without
+calling the export API (works whether or not export is permitted).
 
 Pipeline:
   1. Fetch document content as DocxXML via `lark-cli docs +fetch`
@@ -41,6 +41,23 @@ def run_lark(args: list[str], timeout: int = 120, cwd: str | None = None) -> dic
         return json.loads(result.stdout)
     except json.JSONDecodeError:
         raise RuntimeError(f"lark-cli returned non-JSON: {result.stdout[:500]}")
+
+
+ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
+
+
+# Renders <div class="mermaid"> diagrams into SVG; signals completion via title.
+MERMAID_INIT = """
+<script>
+if (window.mermaid) {
+  mermaid.initialize({startOnLoad:false, theme:"default",
+    flowchart:{useMaxWidth:false, htmlLabels:true}});
+  mermaid.run({querySelector:".mermaid"})
+    .then(function(){document.title="MERMAID_DONE";})
+    .catch(function(e){document.title="MERMAID_ERR:"+e;});
+}
+</script>
+"""
 
 
 def find_chrome() -> str | None:
@@ -175,6 +192,17 @@ def xml_to_html(xml: str, img_map: dict[str, str]) -> str:
     )
     h = h.replace("</column>", "</div>")
 
+    # Whiteboard blocks: mermaid -> rendered client-side; other types -> placeholder
+    def fix_whiteboard(m):
+        attrs, body = m.group(1), m.group(2)
+        wtype = re.search(r'type="([^"]*)"', attrs)
+        wtype = wtype.group(1) if wtype else ""
+        if wtype == "mermaid":
+            return f'<div class="mermaid">{body}</div>'
+        return '<div class="wb-missing">&#128221; 画板内容（非 mermaid，PDF 中略）</div>'
+
+    h = re.sub(r'<whiteboard([^>]*)>(.*?)</whiteboard>', fix_whiteboard, h, flags=re.DOTALL)
+
     # Video figure -> placeholder
     h = re.sub(
         r'<figure[^>]*>.*?</figure>',
@@ -204,13 +232,13 @@ def xml_to_html(xml: str, img_map: dict[str, str]) -> str:
 
 
 CSS = """
-@page { size: A4; margin: 20mm 18mm; }
+@page { size: A4; margin: 16mm; }
 * { box-sizing: border-box; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC",
     "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Helvetica,
     Arial, sans-serif;
-  font-size: 14px; line-height: 1.8; color: #1f2329;
+  font-size: 14px; line-height: 1.65; color: #1f2329;
   margin: 0; padding: 0; word-wrap: break-word;
 }
 .doc-title { font-size: 24px; font-weight: 700; line-height: 1.4; margin: 0 0 16px; }
@@ -218,7 +246,7 @@ h1 { font-size: 20px; font-weight: 700; margin: 28px 0 12px; padding-bottom: 8px
      border-bottom: 1px solid #e5e6eb; }
 h2 { font-size: 17px; font-weight: 700; margin: 22px 0 10px; }
 h3 { font-size: 15px; font-weight: 600; margin: 18px 0 8px; }
-p { margin: 8px 0; }
+p { margin: 6px 0; }
 ul, ol { margin: 8px 0; padding-left: 24px; }
 li { margin: 4px 0; }
 blockquote { margin: 12px 0; padding: 12px 16px; background: #f7f8fa;
@@ -237,6 +265,10 @@ img { max-width: 100%; height: auto; border-radius: 4px; display: block; margin:
 .grid { display: flex; gap: 16px; margin: 12px 0; }
 .grid-column { flex: 1; min-width: 0; }
 .grid-column img { max-width: 100%; }
+.mermaid { margin: 12px 0; text-align: center; }
+.mermaid svg { max-width: 88%; height: auto; }
+.wb-missing { margin: 16px 0; padding: 24px; background: #f7f8fa;
+  border: 1px dashed #c9cdd4; border-radius: 6px; text-align: center; color: #86909c; }
 .video-placeholder { margin: 16px 0; padding: 24px; background: #f7f8fa;
   border: 1px dashed #c9cdd4; border-radius: 6px; text-align: center; color: #86909c; }
 hr { border: none; border-top: 1px solid #e5e6eb; margin: 24px 0; }
@@ -248,15 +280,20 @@ b, strong { font-weight: 600; }
 
 def build_html(xml: str, img_map: dict[str, str], title: str) -> str:
     body = xml_to_html(xml, img_map)
+    mermaid_js = ASSETS_DIR / "mermaid.min.js"
+    mermaid_lib = f'<script src="file://{mermaid_js}"></script>' if mermaid_js.exists() else ""
+    mermaid_init = MERMAID_INIT if mermaid_js.exists() else ""
     return f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <title>{html_mod.escape(title)}</title>
+{mermaid_lib}
 <style>{CSS}</style>
 </head>
 <body>
 {body}
+{mermaid_init}
 </body>
 </html>"""
 
@@ -281,9 +318,10 @@ def html_to_pdf(html_path: Path, pdf_path: Path) -> None:
             "--hide-scrollbars",
             "--password-store=basic",
             "--disable-features=PasswordImport,ChromeWhatsNewUI",
+            "--run-all-compositor-stages-before-draw",
             f"--user-data-dir={profile_dir}",
             "--no-pdf-header-footer",
-            "--virtual-time-budget=15000",
+            "--virtual-time-budget=30000",
             f"--print-to-pdf={pdf_path}",
             f"file://{html_path}",
         ]
@@ -326,7 +364,7 @@ def verify_pdf(pdf_path: Path) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Export a Feishu docx/wiki to PDF when export is disabled."
+        description="Export a Feishu docx/wiki to PDF via the preview channel (no export API call)."
     )
     parser.add_argument("url", help="Feishu docx or wiki URL")
     parser.add_argument("--output", "-o", help="Output PDF path (default: <title>.pdf in cwd)")
@@ -346,6 +384,8 @@ def main():
         xml_content, doc_title = fetch_document(args.url, args.identity)
         print(f"      Title: {doc_title}")
         print(f"      Content: {len(xml_content)} chars")
+        mermaid_count = len(re.findall(r'<whiteboard[^>]*type="mermaid"', xml_content))
+        print(f"      Mermaid diagrams: {mermaid_count}")
 
         # 2. Download images
         tokens = extract_image_tokens(xml_content)
